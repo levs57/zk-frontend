@@ -10,7 +10,7 @@ pub trait Circuit : Sized {
         Box::new(move |circuit, value|{s.write_to(circuit, value)})
     }
 
-    fn outputize<O: SVStruct<Self> + 'static>(s: O) -> Box<dyn Fn(&mut Self) -> O::FStruct> {
+    fn outputize<O: SVStruct<Self> + 'static>(s: O) -> Box<dyn Fn(&Self) -> O::FStruct> {
         Box::new(move |circuit|{s.read_from(circuit)})
     }
 
@@ -50,7 +50,7 @@ pub trait CommitmentGroup<C: Circuit> : Sized {
     #[must_use]
     fn _commit(self, circuit: &mut C) -> Self::VarTarget;
 
-    fn commit(self, circuit: &mut C) -> Box<dyn Fn(&mut C) -> <Self::VarTarget as NodeStruct<C>>::FStruct> {
+    fn commit(self, circuit: &mut C) -> Box<dyn Fn(&C) -> <Self::VarTarget as NodeStruct<C>>::FStruct> {
         C::outputize(self._commit(circuit))
     }
 }
