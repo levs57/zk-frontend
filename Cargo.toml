@@ -9,4 +9,5 @@ edition = "2021"
 [dependencies]
 
 ff = "0.13.0"
+halo2curves = {git = "https://github.com/privacy-scaling-explorations/halo2curves" }
 macros = {path="./src/macros"}

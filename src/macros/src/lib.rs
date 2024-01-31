@@ -62,8 +62,26 @@ pub fn make_tuple_impls(_item: TokenStream) -> TokenStream {
             ti_cr.push_str(&format!(", T{}: CRhsStruct<C>", i+1));
         }
 
+        let mut ret_append = "".to_string();
+        for i in 0..k {
+            ret_append.push_str(&format!("
+            ret.append(&mut self.{i}.to_raw_addr(c));"))
+        }
+
+        let mut let_q = "".to_string();
+        for i in 1..k+1 {
+            let_q.push_str(&format!("
+            let q{i} = T{i}::try_from_raw_addr(c, raws);"));
+        }
+
+        let mut qs = "(q1".to_string();
+        for i in 1..k {
+            qs.push_str(&format!(", q{s}", s=i+1));
+        }
+        qs.push_str(&")");
+
         let incoming = format!(
-        "impl<C, {ti_node}> NodeStruct<C> for {ti} {{
+        "impl<C: Circuit, {ti_node}> NodeStruct<C> for {ti} {{
             type FStruct = {ti_fstruct};
         
             fn alloc_to(c: &mut C) -> Self {{
@@ -77,11 +95,22 @@ pub fn make_tuple_impls(_item: TokenStream) -> TokenStream {
             fn write_to(self, c: &mut C, value: Self::FStruct) {{
                 {self_i_write}
             }}
+
+            fn to_raw_addr(&self, c: &C) -> VecDeque<<C as Circuit>::RawAddr> {{
+                let mut ret = VecDeque::new();
+                {ret_append}
+                ret
+            }}
+        
+            fn try_from_raw_addr(c: &C, raws: &mut VecDeque<<C as Circuit>::RawAddr>) -> Self {{
+                {let_q}
+                {qs}
+            }}
         }}
         
-        impl<C, {ti_sv}> SVStruct<C> for {ti} {{}}
-        impl<C, {ti_sg}> SigStruct<C> for {ti} {{}}
-        impl<C, {ti_cr}> CRhsStruct<C> for {ti} {{}}
+        impl<C: Circuit, {ti_sv}> SVStruct<C> for {ti} {{}}
+        impl<C: Circuit, {ti_sg}> SigStruct<C> for {ti} {{}}
+        impl<C: Circuit, {ti_cr}> CRhsStruct<C> for {ti} {{}}
         
         
         "
