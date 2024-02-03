@@ -372,4 +372,5 @@ dependencies = [
  "ff",
  "halo2curves",
  "macros",
+ "num-bigint",
 ]

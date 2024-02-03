@@ -3,7 +3,7 @@ use std::{cmp::max, collections::{HashSet, VecDeque}, marker::PhantomData, sync:
 use ff::PrimeField;
 use halo2curves::{group::Curve, msm::best_multiexp, CurveAffine};
 
-use crate::circuit::{Circuit, CircuitGenericAdvices, CircuitGenericConstraints, CommitmentGroup, FieldConversion, HasCGElt, HasCRhsAddr, HasSigAddr, HasVarAddr, NodeStruct, Sig, StandardRoundApi, StandardVariables};
+use crate::circuit::{Circuit, CircuitGenericAdvices, CircuitGenericConstraints, CommitmentGroup, FieldConversion, HasCGElt, HasCRhsAddr, HasSigAddr, HasVarAddr, NodeStruct, Sig, StandardIOApi, StandardRoundApi, StandardVariables};
 
 pub trait TypeConfig : 'static{
     type F : PrimeField;
@@ -336,6 +336,9 @@ impl<T: TypeConfig> StandardRoundApi for SimpleCircuit<T> {
 
         (pubs, priv_comm)
     }
+}
+
+impl<T: TypeConfig> StandardIOApi for SimpleCircuit<T> {
 
     fn public_output(&mut self, sig: Sig<Self>) {
         self.current_priv_group.as_mut().unwrap().remove(sig);

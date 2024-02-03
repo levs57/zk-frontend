@@ -45,7 +45,7 @@ pub type Var<C> = Variable<<C as StandardVariables>::VA, C>;
 /// It is as follows: there are 2 groups for each round, one reserved for public signals,
 /// and one for private signals. Each new created signal falls into private group by default,
 /// but can be ejected into public one. 
-pub trait StandardRoundApi : Circuit + StandardVariables where Sig<Self> : IO<Self>, Var<Self> : IO<Self> {
+pub trait StandardRoundApi : Circuit + StandardVariables {
     // The fact that I must copy where clauses everywhere is supremely dumb.
     
     type PubCommGroup: CommitmentGroup<Self> + HasCGElt<Self::SA, Self>;
@@ -56,6 +56,16 @@ pub trait StandardRoundApi : Circuit + StandardVariables where Sig<Self> : IO<Se
         <Self::PubCommGroup as CommitmentGroup<Self>>::CommitmentObject,
         <Self::PrivCommGroup as CommitmentGroup<Self>>::CommitmentObject
     );
+
+}
+
+pub trait Finalizes : Circuit {
+    type FinalForm;
+
+    fn finalizes(self) -> Self::FinalForm;
+}
+
+pub trait StandardIOApi : Circuit + StandardVariables{
 
     /// Moves element from the default private commitment group to the corresponding public.
     fn public_output(&mut self, sig: Sig<Self>);
@@ -86,7 +96,6 @@ pub trait CircuitGenericConstraints : Circuit {
         O: CRhsStruct<Self>,
         Fun: Fn(&[I::FStruct]) -> Vec<O::FStruct> + 'static,
     > (&mut self, f: Fun, deg: usize, num_outputs: usize, inp: Vec<I>) -> Vec<O>;
-
 }
 
 pub trait CommitmentGroup<C: Circuit> : Sized {
