@@ -1,11 +1,16 @@
 use std::{collections::VecDeque, marker::PhantomData};
 
-use ff::PrimeField;
+use ff::{Field, PrimeField, PrimeFieldBits};
 use macros::make_tuple_impls;
+use num_bigint::BigUint;
+
+pub trait FieldModulus : PrimeField {
+    fn modulus() -> BigUint;
+}
 
 /// Hub trait.
 pub trait Circuit : Sized + 'static {
-    type F : PrimeField;
+    type F : PrimeField + FieldModulus;
     type RawAddr; // Optimally, this primitive should not be used to access values themselves, only metadata.
                   // It MUST be collision-free.
 }

@@ -3,10 +3,10 @@ use std::{cmp::max, collections::{HashSet, VecDeque}, marker::PhantomData, sync:
 use ff::PrimeField;
 use halo2curves::{group::Curve, msm::best_multiexp, CurveAffine};
 
-use crate::circuit::{Circuit, CircuitGenericAdvices, CircuitGenericConstraints, CommitmentGroup, FieldConversion, HasCGElt, HasCRhsAddr, HasSigAddr, HasVarAddr, NodeStruct, Sig, StandardIOApi, StandardRoundApi, StandardVariables};
+use crate::circuit::{Circuit, CircuitGenericAdvices, CircuitGenericConstraints, CommitmentGroup, FieldConversion, FieldModulus, HasCGElt, HasCRhsAddr, HasSigAddr, HasVarAddr, NodeStruct, Sig, StandardIOApi, StandardRoundApi, StandardVariables};
 
 pub trait TypeConfig : 'static{
-    type F : PrimeField;
+    type F : PrimeField + FieldModulus;
     type G : CurveAffine<ScalarExt = Self::F>;
 }
 
