@@ -1,4 +1,4 @@
-workspace = { members = ["src/macros"] }
+workspace = { members = ["src/macros", "src/backend/runtime"] }
 [package]
 name = "zk_frontend"
 version = "0.1.0"
