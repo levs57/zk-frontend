@@ -1,7 +1,5 @@
 use crate::circuit::{Circuit, Sig, StandardVariables};
 
-use super::poseidon_permutation::PoseidonPermutation;
-
 #[derive(Clone, Copy)]
 pub enum SpongeAction {
     Absorb(u32),
@@ -33,7 +31,7 @@ pub trait TSpongePrivate<C: Circuit + StandardVariables> {
     fn get_log(&self) -> Vec<SpongeAction>;
     fn tag_hasher(&self, items: Vec<u32>) -> [u128; 2];
     fn serialized_domain_separator(&self) -> Vec<u32>;
-    fn initialize_capacity<T>(&mut self, tag: T);
+    fn initialize_capacity(&mut self, c: &mut C, tag: [u128; 2]);
     fn read_rate_element(&self, offset: usize) -> Sig<C>;
     fn add_rate_element(&self, offset: usize, value: Sig<C>);
     fn permute(&mut self, c: &mut C);
@@ -44,7 +42,6 @@ pub trait TSpongePrivate<C: Circuit + StandardVariables> {
             self.set_absorb_pos(0);
         }
 
-        let pos = self.absorb_pos();
         self.add_rate_element(self.absorb_pos(), input);
         
         self.set_absorb_pos(self.absorb_pos() + 1);
@@ -64,7 +61,7 @@ pub trait TSpongePrivate<C: Circuit + StandardVariables> {
         ret
     }
 
-    fn finalize(&mut self) {
+    fn finalize(&mut self, c: &mut C) {
         let mut preparerd_tag: Vec<u32> = self.get_log().iter().fold(vec![], |mut acc: Vec<SpongeAction>, &n| {
             if let Some(action) = acc.last_mut() {
                 match (action, n) {
@@ -83,7 +80,7 @@ pub trait TSpongePrivate<C: Circuit + StandardVariables> {
 
         preparerd_tag.extend_from_slice(self.serialized_domain_separator().as_slice());
 
-        self.initialize_capacity(self.tag_hasher(preparerd_tag))
+        self.initialize_capacity(c, self.tag_hasher(preparerd_tag))
     }
 }
 
@@ -110,7 +107,7 @@ pub trait TSponge<C: Circuit + StandardVariables> : TSpongePrivate<C> {
     }
 
     fn finalize(&mut self, c: &mut C) {
-        <Self as TSpongePrivate<C>>::initialize_capacity(self, 1);
+        <Self as TSpongePrivate<C>>::finalize(self, c);
     }
 }
 
@@ -129,5 +126,9 @@ pub trait Poseidon<ImplInstance: PoseidonImpl<Self>> : Circuit + StandardVariabl
 
     fn squeeze(&mut self, sponge: &mut ImplInstance::Sponge, length: usize) -> Vec<Sig<Self>> {
         TSponge::squeeze(sponge, self, length)
+    }
+
+    fn finalize(&mut self, sponge: &mut ImplInstance::Sponge) {
+        TSponge::finalize(sponge, self)
     }
 }
