@@ -1,38 +1,10 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     sync::{Arc, Mutex},
-    task::{Context, Poll, Wake, Waker},
+    task::{Context, Poll, Waker},
 };
 
-use crate::task::{Task, TaskId};
-
-struct TaskWaker {
-    task_id: TaskId,
-    task_queue: Arc<Mutex<VecDeque<TaskId>>>,
-}
-
-impl TaskWaker {
-    fn new(task_id: TaskId, task_queue: Arc<Mutex<VecDeque<TaskId>>>) -> Waker {
-        Waker::from(Arc::new(TaskWaker {
-            task_id,
-            task_queue,
-        }))
-    }
-
-    fn wake_task(&self) {
-        self.task_queue.lock().unwrap().push_back(self.task_id);
-    }
-}
-
-impl Wake for TaskWaker {
-    fn wake(self: Arc<Self>) {
-        self.wake_task();
-    }
-
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.wake_task();
-    }
-}
+use crate::{task::{Task, TaskId}, waker::TaskWaker};
 
 pub struct Executor {
     tasks: BTreeMap<TaskId, Task>,
@@ -61,7 +33,7 @@ impl Executor {
         while let Some(task_id) = self.task_queue.lock().unwrap().pop_front() {
             let task = match self.tasks.get_mut(&task_id) {
                 Some(task) => task,
-                None => continue, // task no longer exists (probably sporadic wake)
+                None => continue, // task no longer exists (sporadic wake)
             };
             let waker = self
                 .waker_cache

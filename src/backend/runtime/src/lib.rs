@@ -1,5 +1,7 @@
 pub mod executor;
 pub mod task;
+pub mod waker;
+pub mod adapters;
 
 #[cfg(test)]
 mod tests {
@@ -14,12 +16,16 @@ mod tests {
         println!("async works: {}", value);
     }
 
-    async fn add_two_nodes(node1, node2, out_node) {
-        let round_lock = wait_for_round(3).await;
-        let value1 = node1.await;
-        let value2 = node2.await;
+    async fn mul2(signal_1_id: SignalId, signal_2_id: SignalId, out_signal_id: SignalId) {
+        let value_1 = signal(signal_1_id).await;
+        let value_2 = signal(signal_2_id).await;
+        // expected behaviour of make_future_for:
+        // if signal is ready, return future::ready(value)
+        // if not, make a new future which registers a watcher for this signal in storage
 
-        out_node.emit_event_ready(value1 + value2);
+        // constrain!(signal_1_id * signal_2_id - out_signal_id);  // x * y - z, (signal_1_id, ...)
+
+        emit(out_signal_id, value_1 * value_2);
     }
 
     #[test]
@@ -27,9 +33,5 @@ mod tests {
         let mut executor = Executor::new();
         executor.spawn(Task::new(prints_value()));
         executor.run_until_complete();
-
-        executor.emit_bump_round();
-        executor.spawn(Task::new(prints_value()));
-        executor.run_until_complete()
     }
 }
