@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod event;
 pub mod executor;
 pub mod reactor;
 pub mod task;
@@ -6,7 +7,7 @@ pub mod waker;
 
 #[cfg(test)]
 mod tests {
-    use crate::{adapters::storage::{MyStorage, SignalId, WriterOf}, reactor::SignalFuture};
+    use crate::event::{emit, Event, SignalId};
 
     use super::{executor::Executor, task::Task};
 
@@ -19,11 +20,12 @@ mod tests {
         println!("async works: {}", value);
     }
 
-    async fn mul2(mut storage: MyStorage, signal_1_id: SignalId, signal_2_id: SignalId, out_signal_id: SignalId) {
+    async fn mul2(signal_1_id: SignalId, signal_2_id: SignalId, out_signal_id: SignalId) {
         let value_1 = SignalFuture(signal_1_id).await;
         let value_2 = SignalFuture(signal_2_id).await;
 
         storage.put(&out_signal_id, value_1 * value_2);
+        emit(Event::SignalReadable(out_signal_id));
     }
 
     #[test]
