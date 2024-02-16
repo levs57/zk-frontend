@@ -4,7 +4,10 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use crate::{task::{Task, TaskId}, waker::TaskWaker};
+use crate::{
+    task::{Task, TaskId},
+    waker::TaskWaker,
+};
 
 pub struct Executor {
     tasks: BTreeMap<TaskId, Task>,

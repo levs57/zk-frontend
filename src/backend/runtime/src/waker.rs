@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, sync::{Arc, Mutex}, task::{Wake, Waker}};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+    task::{Wake, Waker},
+};
 
 use crate::task::TaskId;
 
