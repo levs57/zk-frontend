@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use crate::event::SignalId;
+
 pub trait Storage {
     type Addr<T>;
 }
@@ -40,3 +42,34 @@ impl<S: WriterOf<T>, T> WriterOf<T> for Arc<Mutex<S>> {
         lock.put(addr, val)
     }
 }
+
+#[derive(Default)]
+pub struct MyStorage {
+    data: Vec<Option<usize>>,
+}
+
+impl Storage for MyStorage {
+    type Addr<T> = SignalId;
+}
+
+impl AllocatorOf<usize> for MyStorage {
+    fn allocate(&mut self) -> <Self as Storage>::Addr<usize> {
+        self.data.push(None);
+        SignalId(self.data.len() - 1)
+    }
+}
+
+impl ReaderOf<usize> for MyStorage {
+    fn get(&self, addr: &Self::Addr<usize>) -> Option<usize> {
+        self.data[addr.0]
+    }
+}
+
+impl WriterOf<usize> for MyStorage {
+    fn put(&mut self, addr: &Self::Addr<usize>, val: usize) {
+        assert!(self.data[addr.0].is_none());
+        self.data[addr.0] = Some(val);
+    }
+}
+
+pub type SharedStorage = Arc<Mutex<MyStorage>>;

@@ -8,8 +8,8 @@ use std::{
 };
 
 use crate::{
-    adapters::storage::{ReaderOf, Storage},
     event::{Event, SignalId},
+    storage::{ReaderOf, Storage},
 };
 
 pub struct Reactor {

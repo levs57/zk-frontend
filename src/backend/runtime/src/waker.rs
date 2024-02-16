@@ -1,6 +1,5 @@
 use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
+    sync::Arc,
     task::{Wake, Waker},
 };
 
@@ -22,7 +21,7 @@ impl TaskWaker {
     }
 
     fn wake_task(&self) {
-        println!("waking task {:?}", self.task_id);
+        println!("waking {:?}", self.task_id);
         self.task_queue.push(self.task_id);
     }
 }

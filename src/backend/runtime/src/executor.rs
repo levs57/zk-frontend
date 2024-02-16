@@ -6,7 +6,6 @@ use std::{
 };
 
 use crate::{
-    event::process_events,
     task::{Task, TaskId},
     waker::TaskWaker,
 };
@@ -19,13 +18,11 @@ pub struct Executor {
 
 impl Executor {
     pub fn new() -> Self {
-        let mut this = Executor {
+        Executor {
             tasks: BTreeMap::new(),
             task_queue: Arc::new(SegQueue::new()),
             waker_cache: BTreeMap::new(),
-        };
-        this.spawn(Task::new(process_events()));
-        this
+        }
     }
 
     pub fn spawn(&mut self, task: Task) {
@@ -59,8 +56,7 @@ impl Executor {
     }
 
     pub fn run_until_complete(&mut self) {
-        // process_events never exits
-        while self.tasks.len() > 1 {
+        while !self.tasks.is_empty() {
             self.run_ready_tasks();
         }
     }

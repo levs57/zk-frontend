@@ -1,28 +1,26 @@
-pub mod adapters;
 pub mod event;
 pub mod executor;
 pub mod reactor;
-pub mod sample_storage;
+pub mod storage;
 pub mod task;
 pub mod waker;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use crate::{
-        adapters::storage::{AllocatorOf, ReaderOf, WriterOf},
-        event::{emit, Event, SignalId},
-        reactor::Signal,
-        sample_storage::MyStorage,
+    use std::{
+        thread,
+        time::{Duration, Instant},
     };
 
-    use super::{executor::Executor, task::Task};
-
-    type SharedStorage = Arc<Mutex<MyStorage>>;
+    use crate::{
+        event::{emit, Event, SignalId},
+        executor::Executor,
+        reactor::Signal,
+        storage::{AllocatorOf, ReaderOf, SharedStorage, WriterOf},
+        task::Task,
+    };
 
     async fn emits_signal(mut storage: SharedStorage, signal_id: SignalId, value: usize) {
-        println!("emits signal {value}");
         storage.put(&signal_id, value);
         emit(Event::SignalReadable(signal_id));
     }
@@ -33,7 +31,6 @@ mod tests {
         signal_2_id: SignalId,
         out_signal_id: SignalId,
     ) {
-        println!("mul2");
         let value_1 = Signal::new(storage.clone(), signal_1_id).await;
         let value_2 = Signal::new(storage.clone(), signal_2_id).await;
 
@@ -54,6 +51,31 @@ mod tests {
         executor.spawn(Task::new(emits_signal(storage.clone(), second, 1337)));
         executor.run_until_complete();
 
+        assert_eq!(storage.get(&result), Some(42 * 1337));
+    }
+
+    #[test]
+    fn test_threading() {
+        let mut storage = SharedStorage::default();
+        let first = storage.allocate();
+        let second = storage.allocate();
+        let result = storage.allocate();
+
+        let mut executor = Executor::new();
+        executor.spawn(Task::new(mul2(storage.clone(), first, second, result)));
+        executor.spawn(Task::new(emits_signal(storage.clone(), first, 42)));
+
+        let sleep_duration = Duration::from_secs(5);
+        let mut storage_clone = storage.clone();
+        let start = Instant::now();
+        thread::spawn(move || {
+            thread::sleep(sleep_duration);
+            storage_clone.put(&second, 1337);
+            emit(Event::SignalReadable(second));
+        });
+        executor.run_until_complete();
+
+        assert!(Instant::now() - start > sleep_duration);
         assert_eq!(storage.get(&result), Some(42 * 1337));
     }
 
