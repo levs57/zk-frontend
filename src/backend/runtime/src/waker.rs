@@ -7,13 +7,17 @@ use crossbeam_queue::SegQueue;
 
 use crate::task::TaskId;
 
+/// A `Waker`-flavoured struct used by `Executor` and `Reactor`
+/// to wake up paused tasks.
+///
+/// Should only be created inside an executor instance.
 pub(crate) struct TaskWaker {
     task_id: TaskId,
     task_queue: Arc<SegQueue<TaskId>>,
 }
 
 impl TaskWaker {
-    pub fn new(task_id: TaskId, task_queue: Arc<SegQueue<TaskId>>) -> Waker {
+    pub(crate) fn new(task_id: TaskId, task_queue: Arc<SegQueue<TaskId>>) -> Waker {
         Waker::from(Arc::new(TaskWaker {
             task_id,
             task_queue,

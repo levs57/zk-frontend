@@ -13,16 +13,18 @@ mod tests {
     };
 
     use crate::{
-        event::{emit, Event, SignalId},
+        event::{
+            signal::{Signal, SignalId},
+            Event,
+        },
         executor::Executor,
-        reactor::Signal,
         storage::{AllocatorOf, ReaderOf, SharedStorage, WriterOf},
         task::Task,
     };
 
     async fn emits_signal(mut storage: SharedStorage, signal_id: SignalId, value: usize) {
         storage.put(&signal_id, value);
-        emit(Event::SignalReadable(signal_id));
+        Event::SignalReadable(signal_id).emit();
     }
 
     async fn mul2(
@@ -35,7 +37,7 @@ mod tests {
         let value_2 = Signal::new(storage.clone(), signal_2_id).await;
 
         storage.put(&out_signal_id, value_1 * value_2);
-        emit(Event::SignalReadable(out_signal_id));
+        Event::SignalReadable(out_signal_id).emit();
     }
 
     #[test]
@@ -71,27 +73,11 @@ mod tests {
         thread::spawn(move || {
             thread::sleep(sleep_duration);
             storage_clone.put(&second, 1337);
-            emit(Event::SignalReadable(second));
+            Event::SignalReadable(second).emit();
         });
         executor.run_until_complete();
 
         assert!(Instant::now() - start > sleep_duration);
         assert_eq!(storage.get(&result), Some(42 * 1337));
-    }
-
-    async fn produce_value() -> usize {
-        42
-    }
-
-    async fn prints_value() {
-        let value = produce_value().await;
-        println!("async works: {}", value);
-    }
-
-    #[test]
-    fn test_executor_works() {
-        let mut executor = Executor::new();
-        executor.spawn(Task::new(prints_value()));
-        executor.run_until_complete();
     }
 }

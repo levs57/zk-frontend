@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::event::SignalId;
+use crate::event::signal::SignalId;
 
 pub trait Storage {
     type Addr<T>;

@@ -1,20 +1,24 @@
 use std::{
     future::Future,
     pin::Pin,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
     task::{Context, Poll},
 };
 
+/// A tag identifying tasks inside an executor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TaskId(u64);
+pub struct TaskId(usize);
 
 impl TaskId {
     fn new() -> Self {
-        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
         TaskId(NEXT_ID.fetch_add(1, Ordering::Relaxed))
     }
 }
 
+/// A tagged wrapper around `Future`.
+///
+/// Marks top-level futures. Can be spawned and ran by an `Executor`.
 pub struct Task {
     pub(crate) id: TaskId,
     pub(crate) future: Pin<Box<dyn Future<Output = ()>>>,
