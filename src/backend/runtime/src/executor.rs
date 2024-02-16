@@ -1,27 +1,31 @@
+use crossbeam_queue::SegQueue;
 use std::{
-    collections::{BTreeMap, VecDeque},
-    sync::{Arc, Mutex},
+    collections::BTreeMap,
+    sync::Arc,
     task::{Context, Poll, Waker},
 };
 
 use crate::{
+    event::process_events,
     task::{Task, TaskId},
     waker::TaskWaker,
 };
 
 pub struct Executor {
     tasks: BTreeMap<TaskId, Task>,
-    task_queue: Arc<Mutex<VecDeque<TaskId>>>,
+    task_queue: Arc<SegQueue<TaskId>>,
     waker_cache: BTreeMap<TaskId, Waker>,
 }
 
 impl Executor {
     pub fn new() -> Self {
-        Executor {
+        let mut this = Executor {
             tasks: BTreeMap::new(),
-            task_queue: Arc::new(Mutex::new(VecDeque::new())),
+            task_queue: Arc::new(SegQueue::new()),
             waker_cache: BTreeMap::new(),
-        }
+        };
+        this.spawn(Task::new(process_events()));
+        this
     }
 
     pub fn spawn(&mut self, task: Task) {
@@ -29,11 +33,12 @@ impl Executor {
         if self.tasks.insert(task.id, task).is_some() {
             panic!("task with same ID already exists");
         }
-        self.task_queue.lock().unwrap().push_back(task_id);
+        self.task_queue.push(task_id);
     }
 
     fn run_ready_tasks(&mut self) {
-        while let Some(task_id) = self.task_queue.lock().unwrap().pop_front() {
+        while let Some(task_id) = self.task_queue.pop() {
+            println!("running {task_id:?}");
             let task = match self.tasks.get_mut(&task_id) {
                 Some(task) => task,
                 None => continue, // task no longer exists (sporadic wake)
@@ -54,7 +59,8 @@ impl Executor {
     }
 
     pub fn run_until_complete(&mut self) {
-        while !self.tasks.is_empty() {
+        // process_events never exits
+        while self.tasks.len() > 1 {
             self.run_ready_tasks();
         }
     }

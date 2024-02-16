@@ -1,26 +1,31 @@
-use std::{collections::VecDeque, pin::Pin, sync::OnceLock, task::Poll};
+use std::{
+    collections::VecDeque,
+    pin::Pin,
+    sync::{Mutex, OnceLock},
+    task::Poll,
+};
 
-use atomic_waker::AtomicWaker;
-use futures::{stream::Stream, StreamExt};
+use futures::{stream::Stream, task::AtomicWaker, StreamExt};
 
 use crate::reactor::Reactor;
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct SignalId(pub usize);
 
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Event {
     SignalReadable(SignalId),
 }
 
-static EVENT_QUEUE: OnceLock<VecDeque<Event>> = OnceLock::new(); // TODO: thread safe queue
+static EVENT_QUEUE: OnceLock<Mutex<VecDeque<Event>>> = OnceLock::new();
 static EVENT_WAKER: AtomicWaker = AtomicWaker::new();
 
 pub struct EventStream(()); // private field prevents construction from outside the module
 
 impl EventStream {
-    pub fn new() -> EventStream {
-        let _ = EVENT_QUEUE.get_or_init(|| VecDeque::new());
-        EventStream(())
+    pub fn new() -> Self {
+        let _ = EVENT_QUEUE.get_or_init(|| Mutex::default());
+        Self(())
     }
 }
 
@@ -34,18 +39,11 @@ impl Stream for EventStream {
         let event_queue = EVENT_QUEUE
             .get()
             .expect("event queue should be initialized before polling");
-        // possible race condition:
-        // Thread A            Thread B
-        // queue check         |
-        // |                   |
-        // |                   emit(...) --- no task awoken
-        // |                   |
-        // waker registration  |
-        if let Some(event) = event_queue.pop_back() {
+        if let Some(event) = event_queue.lock().unwrap().pop_back() {
             return Poll::Ready(Some(event));
         }
         EVENT_WAKER.register(&cx.waker());
-        match event_queue.pop_back() {
+        match event_queue.lock().unwrap().pop_back() {
             Some(event) => {
                 EVENT_WAKER.take();
                 Poll::Ready(Some(event))
@@ -56,18 +54,21 @@ impl Stream for EventStream {
 }
 
 pub fn emit(event: Event) {
+    println!("emitting {event:?}");
     let event_queue = EVENT_QUEUE
-        .get_mut()
+        .get()
         .expect("event queue should be initialized before emitting");
-    event_queue.push_back(event);
+    event_queue.lock().unwrap().push_back(event);
     EVENT_WAKER.wake();
 }
 
 pub async fn process_events() {
+    println!("process_events");
     let mut event_stream = EventStream::new();
     let reactor = Reactor::get();
 
     while let Some(event) = event_stream.next().await {
+        println!("process_event reacting on {event:?}");
         reactor.react(event);
     }
 }
