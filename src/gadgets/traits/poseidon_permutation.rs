@@ -1,23 +1,20 @@
-use std::marker::PhantomData;
-
-use crate::circuit::{Circuit, Sig, StandardVariables};
+use crate::circuit::{Circuit, HasSigtype, Sig, Signals, Unassigned, Variables};
 
 use super::sponge::{TSpongePrivate, TSponge, SpongeAction};
 use super::atoms::{Pow5, LinearCombination};
 
-pub struct PoseidonSponge<C: Circuit + StandardVariables, F> {
+pub struct PoseidonSponge<C: Circuit + Signals + Variables + HasSigtype<<C as Circuit>::F>> {
     log: Vec<SpongeAction>,
-    state: Vec<Sig<C>>,
-    initial_capacity: Sig<C>,
+    state: Vec<C::Sig<C::F>>,
+    initial_capacity: Unassigned<C, C::F, C::Sig<C::F>>,
     sep: usize,
     absorb_pos: usize,
     squeeze_pos: usize,
-    _pd: PhantomData<F>,
 }
 
-impl<C: Circuit + StandardVariables + PoseidonPermutation, F> TSpongePrivate<C> for PoseidonSponge<C, F> {
+impl<C: Circuit + PoseidonPermutation + HasSigtype<<C as Circuit>::F> + Signals> TSpongePrivate<C> for PoseidonSponge<C> {
     type DomainSeparator = usize;
-    type Field = F;
+    type Field = C::F;
 
     fn rate(&self) -> usize {
         self.state.len() - 1
@@ -46,10 +43,9 @@ impl<C: Circuit + StandardVariables + PoseidonPermutation, F> TSpongePrivate<C> 
             sep,
             absorb_pos: 0,
             squeeze_pos: 0,
-            initial_capacity: c.alloc_sig().into(),
-            _pd: PhantomData,
+            initial_capacity: c.alloc_sig_committed(),
         };
-        ret.state.push(ret.initial_capacity);
+        ret.state.push(ret.initial_capacity.value());
         ret
     }
 
@@ -69,11 +65,11 @@ impl<C: Circuit + StandardVariables + PoseidonPermutation, F> TSpongePrivate<C> 
         vec![self.sep as u32]
     }
 
-    fn read_rate_element(&self, offset: usize) -> Sig<C> {
+    fn read_rate_element(&self, offset: usize) -> C::Sig<C::F> {
         self.state[1 + offset]
     }
 
-    fn add_rate_element(&mut self, offset: usize, value: Sig<C>) {
+    fn add_rate_element(&mut self, offset: usize, value: C::Sig<C::F>) {
         self.state[1 + offset] = value
     }
 
@@ -82,23 +78,23 @@ impl<C: Circuit + StandardVariables + PoseidonPermutation, F> TSpongePrivate<C> 
     }
 
     fn initialize_capacity(&mut self, c: &mut C, capacity: Self::Field) {
-        
+
     }
 }
 
-impl<C: Circuit + StandardVariables + PoseidonPermutation, F> TSponge<C> for PoseidonSponge<C, F> {
+impl<C: Circuit + PoseidonPermutation + HasSigtype<<C as Circuit>::F> + Signals> TSponge<C> for PoseidonSponge<C> {
     fn new(c: &mut C) -> Self {
         todo!()
     }
 }
 
-pub trait PoseidonPermutationImpl<C : Circuit + StandardVariables + Pow5 + LinearCombination> {
-    fn poseidon_permutation(c: &mut C, inputs: Vec<Sig<C>>) -> Vec<Sig<C>>;
+pub trait PoseidonPermutationImpl<C : Circuit + Pow5 + LinearCombination + Signals> {
+    fn poseidon_permutation(c: &mut C, inputs: Vec<C::Sig<C::F>>) -> Vec<C::Sig<C::F>>;
 }
 
-pub trait PoseidonPermutation: Circuit + StandardVariables + Pow5 + LinearCombination {
+pub trait PoseidonPermutation: Circuit + HasSigtype<<Self as Circuit>::F> + Pow5 + LinearCombination + Signals {
     type ImplInstance: PoseidonPermutationImpl<Self>;
-    fn poseidon(&mut self, inputs: Vec<Sig<Self>>) -> Vec<Sig<Self>> {
+    fn poseidon(&mut self, inputs: Vec<Self::Sig<Self::F>>) -> Vec<Self::Sig<Self::F>> {
         Self::ImplInstance::poseidon_permutation(self, inputs)
     }
 }

@@ -1,9 +1,9 @@
-use crate::circuit::{Circuit, Sig, StandardVariables};
+use crate::circuit::{Circuit, HasSigtype, Sig, Signals};
 
-pub trait Pow5: Circuit + StandardVariables {
-    fn pow5(&mut self, i: Sig<Self>) -> Sig<Self>;
+pub trait Pow5: Circuit + HasSigtype<<Self as Circuit>::F> + Signals {
+    fn pow5(&mut self, i: Self::Sig<Self::F>) -> Self::Sig<Self::F>;
 }
 
-pub trait LinearCombination: Circuit + StandardVariables {
-    fn lc(&mut self, coeffs: Vec<Self::F>, sigs: Vec<Sig<Self>>) -> Sig<Self>;
+pub trait LinearCombination: Circuit + HasSigtype<<Self as Circuit>::F> + Signals {
+    fn lc(&mut self, coeffs: Vec<Self::F>, sigs: Vec<Self::Sig<Self::F>>) -> Self::Sig<Self::F>;
 }

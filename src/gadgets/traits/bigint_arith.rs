@@ -1,36 +1,36 @@
 use num_bigint::BigUint;
 
-use crate::circuit::{Circuit, Sig, StandardVariables};
+use crate::circuit::{Circuit, HasSigtype, Sig};
 
-pub trait RangecheckImpl<C: Circuit + StandardVariables> {
+pub trait RangecheckImpl<C: Circuit + HasSigtype<<C as Circuit>::F>> {
     /// Returns upper bound of this signal.
     /// Returns None if no bound is set.
-    fn bound(c: & C, sig: Sig<C>) -> Option<BigUint>;
+    fn bound(c: & C, sig: Sig<C, C::F>) -> Option<BigUint>;
 
     /// Sets up a new signal bound. If bound is larger than already existing, nothing happens.
     /// MUST fail if bound > field modulus.
-    fn assume(c: &mut C, sig: Sig<C>, bound: &BigUint);
+    fn assume(c: &mut C, sig: Sig<C, C::F>, bound: &BigUint);
 
     /// Returns non-negative linear combination. Panics in case of bound overflow.
-    fn num_linear_combination(c: &mut C, coeffs: &[BigUint], values: &[Sig<C>]) -> Sig<C>;
+    fn num_linear_combination(c: &mut C, coeffs: &[BigUint], values: &[Sig<C, C::F>]) -> Sig<C, C::F>;
     
     /// Returns the product. Panics in case of bound overflow.
-    fn num_mul(c: &mut C, a: Sig<C>, b: Sig<C>) -> Sig<C>;
+    fn num_mul(c: &mut C, a: Sig<C, C::F>, b: Sig<C, C::F>) -> Sig<C, C::F>;
 
     /// Returns the maximal bound that is achievable in a single check.
     /// Check of sizes lesser than this MIGHT be implemented as two checks on x and x-k.
     fn max_primitive_rangecheck(c: &C) -> usize;
 
     /// Range-checks the signal. Fails if bound > max_primitive_rangecheck
-    fn primitive_rangecheck(c: &mut C, sig: Sig<C>, bound: &BigUint);
+    fn primitive_rangecheck(c: &mut C, sig: Sig<C, C::F>, bound: &BigUint);
 
     /// Splits the value into limbs with some base. Does not constrain anything.
-    fn advise_split_into_n_limbs(c: &mut C, sig: Sig<C>, base: &BigUint, num_limbs: u32) -> Vec<Sig<C>>;
+    fn advise_split_into_n_limbs(c: &mut C, sig: Sig<C, C::F>, base: &BigUint, num_limbs: u32) -> Vec<Sig<C, C::F>>;
 
     /// Splits the signal into limbs (and range-checks it). Each limb is combined from #packing primitive limbs.
     /// Should fail if primitive_base > max_primitive_rangecheck.
     /// For base = primitive_base^base_pow requires base^num_limbs < field modulus.
-    fn split_into_n_limbs(c: &mut C, sig: Sig<C>, primitive_base: &BigUint, packing: u32, num_limbs: u32) -> Vec<Sig<C>> {
+    fn split_into_n_limbs(c: &mut C, sig: Sig<C, C::F>, primitive_base: &BigUint, packing: u32, num_limbs: u32) -> Vec<Sig<C, C::F>> {
         let base = primitive_base.pow(packing);
         let bound = &base.pow(num_limbs);
         let primitive_limbs = Self::advise_split_into_n_limbs(c, sig, primitive_base, num_limbs*packing);
@@ -59,7 +59,7 @@ pub trait RangecheckImpl<C: Circuit + StandardVariables> {
 
     /// Splits already bounded signal into appropriate amount of limbs.
     /// Might fail if bound is too close to field modulus.
-    fn split_into_limbs_strict(c: &mut C, sig: Sig<C>, primitive_base: &BigUint, packing: u32) -> Vec<Sig<C>> {
+    fn split_into_limbs_strict(c: &mut C, sig: Sig<C, C::F>, primitive_base: &BigUint, packing: u32) -> Vec<Sig<C, C::F>> {
         let base = primitive_base.pow(packing);
         let num_limbs = log_ceil(&base, &Self::bound(c, sig).unwrap());
         Self::split_into_n_limbs(c, sig, primitive_base, packing, num_limbs)
@@ -67,7 +67,7 @@ pub trait RangecheckImpl<C: Circuit + StandardVariables> {
 
     /// Attempts to flush the registers. Might fail if bounds are too large.
     /// WARNING: this implementation does not optimize linear constraints; optimally this should be done by backend.
-    fn normalize(c: &mut C, limbs: &Vec<Sig<C>>, primitive_base: &BigUint, packing: u32) -> Vec<Sig<C>> {
+    fn normalize(c: &mut C, limbs: &Vec<Sig<C, C::F>>, primitive_base: &BigUint, packing: u32) -> Vec<Sig<C, C::F>> {
         let mut limbs : Vec<_> = limbs.into_iter().map(|x|vec![*x]).collect();
         let mut i = 0;
         loop {
@@ -123,29 +123,29 @@ fn log_ceil(b: &BigUint, x: &BigUint) -> u32 {
 
 
 
- pub trait Rangecheck : Circuit + StandardVariables {
+ pub trait Rangecheck : Circuit + HasSigtype<<Self as Circuit>::F> {
 
     type IRangecheck: RangecheckImpl<Self>;
 
     /// Returns upper bound of this signal.
     /// Returns None if no bound is set.
-    fn bound(&self, sig: Sig<Self>) -> Option<BigUint> {
+    fn bound(&self, sig: Sig<Self, Self::F>) -> Option<BigUint> {
         Self::IRangecheck::bound(self, sig)
     }
 
     /// Sets up a new signal bound. If bound is larger than already existing, nothing happens.
     /// MUST fail if bound > field modulus.
-    fn assume(&mut self, sig: Sig<Self>, bound: &BigUint) {
+    fn assume(&mut self, sig: Sig<Self, Self::F>, bound: &BigUint) {
         Self::IRangecheck::assume(self, sig, bound)
     }
 
     /// Returns non-negative linear combination. Panics in case of bound overflow.
-    fn num_linear_combination(&mut self, coeffs: &[BigUint], values: &[Sig<Self>]) -> Sig<Self> {
+    fn num_linear_combination(&mut self, coeffs: &[BigUint], values: &[Sig<Self, Self::F>]) -> Sig<Self, Self::F> {
         Self::IRangecheck::num_linear_combination(self, coeffs, values)
     }
     
     /// Returns the product. Panics in case of bound overflow.
-    fn num_mul(&mut self, a: Sig<Self>, b: Sig<Self>) -> Sig<Self> {
+    fn num_mul(&mut self, a: Sig<Self, Self::F>, b: Sig<Self, Self::F>) -> Sig<Self, Self::F> {
         Self::IRangecheck::num_mul(self, a, b)
     }
 
@@ -156,25 +156,25 @@ fn log_ceil(b: &BigUint, x: &BigUint) -> u32 {
     }
 
     /// Range-checks the signal. Fails if bound > max_primitive_rangecheck
-    fn primitive_rangecheck(&mut self, sig: Sig<Self>, bound: &BigUint) {
+    fn primitive_rangecheck(&mut self, sig: Sig<Self, Self::F>, bound: &BigUint) {
         Self::IRangecheck::primitive_rangecheck(self, sig, bound)
     }
 
     /// Splits the value into limbs with some base. Does not constrain anything.
-    fn advise_split_into_n_limbs(&mut self, sig: Sig<Self>, base: &BigUint, num_limbs: u32) -> Vec<Sig<Self>> {
+    fn advise_split_into_n_limbs(&mut self, sig: Sig<Self, Self::F>, base: &BigUint, num_limbs: u32) -> Vec<Sig<Self, Self::F>> {
         Self::IRangecheck::advise_split_into_n_limbs(self, sig, base, num_limbs)
     }
 
     /// Splits the signal into limbs (and range-checks it). Each limb is combined from #packing primitive limbs.
     /// Should fail if primitive_base > max_primitive_rangecheck.
     /// For base = primitive_base^base_pow requires base^num_limbs < field modulus.
-    fn split_into_n_limbs(&mut self, sig: Sig<Self>, primitive_base: &BigUint, packing: u32, num_limbs: u32) -> Vec<Sig<Self>> {
+    fn split_into_n_limbs(&mut self, sig: Sig<Self, Self::F>, primitive_base: &BigUint, packing: u32, num_limbs: u32) -> Vec<Sig<Self, Self::F>> {
         Self::IRangecheck::split_into_n_limbs(self, sig, primitive_base, packing, num_limbs)
     }
 
     /// Splits already bounded signal into appropriate amount of limbs.
     /// Might fail if bound is too close to field modulus.
-    fn split_into_limbs_strict(&mut self, sig: Sig<Self>, primitive_base: &BigUint, packing: u32) -> Vec<Sig<Self>> {
+    fn split_into_limbs_strict(&mut self, sig: Sig<Self, Self::F>, primitive_base: &BigUint, packing: u32) -> Vec<Sig<Self, Self::F>> {
         Self::IRangecheck::split_into_limbs_strict(self, sig, primitive_base, packing)
     }
 
