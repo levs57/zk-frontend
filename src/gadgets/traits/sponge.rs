@@ -1,4 +1,8 @@
+use std::marker::PhantomData;
+
 use crate::circuit::{Circuit, Sig, StandardVariables};
+
+use super::poseidon_permutation::PoseidonPermutation;
 
 #[derive(Clone, Copy)]
 pub enum SpongeAction {
@@ -17,23 +21,23 @@ impl SpongeAction {
 
 pub trait TSpongePrivate<C: Circuit + StandardVariables> {
     type DomainSeparator;
+    type Field;
 
     fn rate(&self) -> usize;
-    fn capacity(&self) -> usize;
     
     fn absorb_pos(&self) -> usize;
     fn set_absorb_pos(&mut self, new_pos: usize);
     fn squeeze_pos(&self) -> usize;
     fn set_squeeze_pos(&mut self, new_pos: usize);
 
-    fn new(c: &mut C, sep: Self::DomainSeparator) -> Self;
+    fn new(c: &mut C, sep: Self::DomainSeparator, rate: usize) -> Self;
     fn add_log(&mut self, action: SpongeAction);
     fn get_log(&self) -> Vec<SpongeAction>;
-    fn tag_hasher(&self, items: Vec<u32>) -> [u128; 2];
+    fn tag_hasher(&self, items: Vec<u32>) -> Self::Field;
     fn serialized_domain_separator(&self) -> Vec<u32>;
-    fn initialize_capacity(&mut self, c: &mut C, tag: [u128; 2]);
+    fn initialize_capacity(&mut self, c: &mut C, capacity: Self::Field);
     fn read_rate_element(&self, offset: usize) -> Sig<C>;
-    fn add_rate_element(&self, offset: usize, value: Sig<C>);
+    fn add_rate_element(&mut self, offset: usize, value: Sig<C>);
     fn permute(&mut self, c: &mut C);
 
     fn absorb_one(&mut self, c: &mut C, input: Sig<C>) {
