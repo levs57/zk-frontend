@@ -71,10 +71,11 @@ pub trait HasSigtype<T: 'static> : Circuit + HasVartype<T> + Conversion<T, Self:
 pub trait Circuit : Conversion<Self::F, Self::F> + Sized{
     type F : PrimeField;
     type RawAddr : Copy;
+    type Config;
 
     fn inner_type(&self, addr: Self::RawAddr) -> TypeId;
     /// Constructs a new raw address with inner type T. All boolean flags are unset, all other flags are None.
-    fn _alloc_raw<T: 'static>(&mut self) -> Self::RawAddr where Self : HasVartype<T>;
+    fn _alloc_raw<T: 'static>(&mut self) -> Self::RawAddr where Self::Config : HasVartype<T>;
 }
 
 pub trait VariableFlag : Circuit {
@@ -124,21 +125,21 @@ pub trait ConstantFlag : Circuit + VariableFlag {
 
 
 pub trait Variables : Circuit + VariableFlag {
-    type Var<T> : Copy + ToRawAddr<Self> where T: 'static, Self : HasVartype<T>;
-    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Var<T> where Self : HasVartype<T>;
-    fn alloc_var<T: 'static>(&mut self) -> Self::Var<T> where Self : HasVartype<T>;
+    type Var<T> : Copy + ToRawAddr<Self> where T: 'static, Self::Config : HasVartype<T>;
+    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Var<T> where Self::Config : HasVartype<T>;
+    fn alloc_var<T: 'static>(&mut self) -> Self::Var<T> where Self::Config : HasVartype<T>;
 }
 
 impl<C : Circuit + VariableFlag> Variables for C {
-    type Var<T : 'static> = Var<C, T> where C : HasVartype<T>;
+    type Var<T : 'static> = Var<C, T> where C::Config : HasVartype<T>;
 
-    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Var<T> where C : HasVartype<T>{
+    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Var<T> where C::Config : HasVartype<T>{
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_var(raw_addr));
         Var {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_var<T: 'static>(&mut self) -> Self::Var<T> where Self : HasVartype<T>, {
+    fn alloc_var<T: 'static>(&mut self) -> Self::Var<T> where Self::Config : HasVartype<T>, {
         let raw_addr = self._alloc_raw::<T>();
         self._set_var_flag(raw_addr, true);
         self.var_from_raw_addr(raw_addr)
@@ -147,19 +148,34 @@ impl<C : Circuit + VariableFlag> Variables for C {
 
 /// Anything that deals with advices is a struct of vars (and, generally, any node value in execution graph).
 /// Signals and other things can be converted to it using _into().
-pub struct Var<C: Circuit + HasVartype<T>, T: 'static> {
+pub struct Var<C, T: 'static>
+where
+    C: Circuit,
+    C::Config: HasVartype<T>,
+{
     raw_addr : C::RawAddr,
     _marker : PhantomData<T>,
 }
-impl<C: Circuit + HasVartype<T>, T: 'static> Clone for Var<C, T> {
+impl<C, T: 'static> Clone for Var<C, T> 
+where
+    C: Circuit,
+    C::Config: HasVartype<T>,
+{
     fn clone(&self) -> Self {
         Self { raw_addr: self.raw_addr.clone(), _marker: PhantomData }
     }
 }
-impl<C: Circuit + VariableFlag + HasVartype<T>, T: 'static> Copy for Var<C, T> {}
+impl<C, T: 'static> Copy for Var<C, T>
+where
+    C: Circuit + VariableFlag,
+    C::Config: HasVartype<T>,
+{}
 
 impl<C: Circuit + VariableFlag + HasVartype<T1> + HasVartype<T2> + Conversion<T1, T2>, T1: 'static, T2: 'static>
     _Into<Var<C, T2>> for Var<C, T1> 
+where
+    C: Circuit + VariableFlag + Conversion<T1, T2>,
+    C::Config: HasVartype<T1> + HasVartype<T2>,
 {
     /// Converts the variable with inner type T1 into variable with outer type T2.
     #[inline(always)]
@@ -168,7 +184,11 @@ impl<C: Circuit + VariableFlag + HasVartype<T1> + HasVartype<T2> + Conversion<T1
     }
 }
 
-impl<C: Circuit + HasVartype<T>, T: 'static> ToRawAddr<C> for Var<C, T> {
+impl<C, T: 'static> ToRawAddr<C> for Var<C, T>
+where
+    C: Circuit,
+    C::Config: HasVartype<T>,
+{
     fn to_raw_addr(&self) -> <C as Circuit>::RawAddr {
         self.raw_addr
     }
@@ -178,25 +198,25 @@ impl<C: Circuit + HasVartype<T>, T: 'static> ToRawAddr<C> for Var<C, T> {
 // ---------SIGS---------
 
 pub trait Signals : Circuit + SignalFlag + PrimarySignalFlag {
-    type Sig<T> : Copy + ToRawAddr<Self> where T: 'static, Self : HasSigtype<T>;
-    fn sig_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Sig<T> where Self : HasSigtype<T>;
+    type Sig<T> : Copy + ToRawAddr<Self> + RWStruct<Self> where T: 'static, Self::Config : HasSigtype<T>;
+    fn sig_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Sig<T> where Self::Config : HasSigtype<T>;
     /// Allocates signal and commits it.
-    fn alloc_sig<T: 'static>(&mut self) -> Self::Sig<T> where Self : HasSigtype<T>;
+    fn alloc_sig<T: 'static>(&mut self) -> Self::Sig<T> where  Self::Config : HasSigtype<T>;
     /// Allocates signal and does not commit it. Unsafe. Should be only used in conjunction with linear combination constraint.
-    fn _alloc_sig_dependent<T: 'static>(&mut self) -> Self::Sig<T> where Self : HasSigtype<T>;
+    fn _alloc_sig_dependent<T: 'static>(&mut self) -> Self::Sig<T> where  Self::Config : HasSigtype<T>;
 }
 
 impl<C : Circuit + SignalFlag + PrimarySignalFlag> Signals for C {
-    type Sig<T : 'static> = Sig<C, T> where C : HasSigtype<T>;
+    type Sig<T : 'static> = Sig<C, T> where <C as Circuit>::Config: HasSigtype<T>;
 
-    fn sig_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Sig<T> where Self : HasSigtype<T> {
+    fn sig_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Sig<T> where  Self::Config : HasSigtype<T> {
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_var(raw_addr));
         assert!(self.is_sig(raw_addr));
         Sig {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_sig<T: 'static>(&mut self) -> Self::Sig<T> where Self : HasSigtype<T> {
+    fn alloc_sig<T: 'static>(&mut self) -> Self::Sig<T> where Self::Config : HasSigtype<T> {
         let raw_addr = self._alloc_raw::<T>();
         self._set_var_flag(raw_addr, true);
         self._set_sig_flag(raw_addr, true);
@@ -204,7 +224,7 @@ impl<C : Circuit + SignalFlag + PrimarySignalFlag> Signals for C {
         self.sig_from_raw_addr(raw_addr)
     }
 
-    fn _alloc_sig_dependent<T: 'static>(&mut self) -> Self::Sig<T> where Self : HasSigtype<T> {
+    fn _alloc_sig_dependent<T: 'static>(&mut self) -> Self::Sig<T> where Self::Config : HasSigtype<T> {
         let raw_addr = self._alloc_raw::<T>();
         self._set_var_flag(raw_addr, true);
         self._set_sig_flag(raw_addr, true);
@@ -213,19 +233,32 @@ impl<C : Circuit + SignalFlag + PrimarySignalFlag> Signals for C {
 }
 
 
-pub struct Sig<C: Circuit + HasSigtype<T>, T: 'static> {
+pub struct Sig<C: Circuit, T: 'static> 
+where 
+    C::Config: HasSigtype<T>
+{
     raw_addr : C::RawAddr,
     _marker : PhantomData<T>,
 }
-impl<C: Circuit + HasSigtype<T>, T: 'static> Clone for Sig<C, T> {
+
+impl<C: Circuit, T: 'static> Clone for Sig<C, T>
+where
+    C::Config: HasSigtype<T>    
+{
     fn clone(&self) -> Self {
         Self { raw_addr: self.raw_addr.clone(), _marker: PhantomData }
     }
 }
-impl<C: Circuit + HasSigtype<T>, T: 'static> Copy for Sig<C, T> {}
+impl<C: Circuit, T: 'static> Copy for Sig<C, T> 
+where
+    C::Config: HasSigtype<T>    
+{}
 
-impl<C: Circuit + HasSigtype<T1> + HasSigtype<T2> + Conversion<T1, T2>, T1: 'static, T2: 'static>
+impl<C, T1: 'static, T2: 'static>
     _Into<Sig<C, T2>> for Sig<C, T1>
+where 
+    C: Circuit + Conversion<T1, T2>,
+    C::Config: HasSigtype<T1> + HasSigtype<T2>,
 {
     /// Converts the signal with inner type T1 into signal with outer type T2.
     #[inline(always)]
@@ -234,8 +267,11 @@ impl<C: Circuit + HasSigtype<T1> + HasSigtype<T2> + Conversion<T1, T2>, T1: 'sta
     }
 }
 
-impl<C: Circuit + HasSigtype<T1> + HasSigtype<T2> + Conversion<T1, T2>, T1: 'static, T2: 'static>
+impl<C, T1: 'static, T2: 'static>
     _Into<Var<C, T2>> for Sig<C, T1>
+where
+    C: Circuit + Conversion<T1, T2>,
+    C::Config: HasSigtype<T1> + HasSigtype<T2>,
 {
     /// Converts the signal with inner type T1 into variable with outer type T2.
     #[inline(always)]
@@ -244,7 +280,11 @@ impl<C: Circuit + HasSigtype<T1> + HasSigtype<T2> + Conversion<T1, T2>, T1: 'sta
     }
 }
 
-impl<C: Circuit + HasSigtype<T>, T: 'static> ToRawAddr<C> for Sig<C, T> {
+impl<C, T: 'static> ToRawAddr<C> for Sig<C, T> 
+where
+    C: Circuit,
+    C::Config: HasSigtype<T>,
+{
     fn to_raw_addr(&self) -> <C as Circuit>::RawAddr {
         self.raw_addr
     }
@@ -253,22 +293,22 @@ impl<C: Circuit + HasSigtype<T>, T: 'static> ToRawAddr<C> for Sig<C, T> {
 // ---------CONSTS---------
 
 pub trait Constants : Circuit + ConstantFlag {
-    type Const<T> : Copy + ToRawAddr<Self> where T: 'static, Self : HasVartype<T>;
-    fn const_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Const<T> where Self : HasVartype<T>;
-    fn alloc_const<T: 'static>(&mut self) -> Self::Const<T> where Self : HasVartype<T>;
+    type Const<T> : Copy + ToRawAddr<Self> where T: 'static, Self::Config : HasVartype<T>;
+    fn const_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Const<T> where Self::Config : HasVartype<T>;
+    fn alloc_const<T: 'static>(&mut self) -> Self::Const<T> where Self::Config : HasVartype<T>;
 }
 
 impl<C : Circuit + ConstantFlag> Constants for C {
-    type Const<T> = Const<C, T> where T: 'static, Self : HasVartype<T>;
+    type Const<T> = Const<C, T> where T: 'static, Self::Config : HasVartype<T>;
 
-    fn const_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Const<T> where Self : HasVartype<T> {
+    fn const_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Const<T> where Self::Config : HasVartype<T> {
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_var(raw_addr));
         assert!(self.is_const(raw_addr));
         Const {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_const<T: 'static>(&mut self) -> Self::Const<T> where Self : HasVartype<T> {
+    fn alloc_const<T: 'static>(&mut self) -> Self::Const<T> where Self::Config : HasVartype<T> {
         let raw_addr = self._alloc_raw::<T>();
         self._set_const_flag(raw_addr, true);
         self._set_var_flag(raw_addr, true);
@@ -276,19 +316,36 @@ impl<C : Circuit + ConstantFlag> Constants for C {
     }
 }
 
-pub struct Const<C: Circuit + HasVartype<T>, T: 'static> {
+pub struct Const<C, T: 'static>
+where
+    C: Circuit,
+    C::Config: HasVartype<T>,
+{
     raw_addr : C::RawAddr,
     _marker : PhantomData<T>,
 }
-impl<C: Circuit + HasVartype<T>, T: 'static> Clone for Const<C, T> {
+
+impl<C, T: 'static> Clone for Const<C, T>
+where
+    C: Circuit,
+    C::Config: HasVartype<T>,
+{
     fn clone(&self) -> Self {
         Self { raw_addr: self.raw_addr.clone(), _marker: PhantomData }
     }
 }
-impl<C: Circuit + HasVartype<T>, T: 'static> Copy for Const<C, T> {}
 
-impl<C: Circuit + HasVartype<T1> + HasVartype<T2> + Conversion<T1, T2>, T1: 'static, T2: 'static>
+impl<C, T: 'static> Copy for Const<C, T>
+where
+    C: Circuit,
+    C::Config: HasVartype<T>
+{}
+
+impl<C, T1: 'static, T2: 'static>
     _Into<Const<C, T2>> for Const<C, T1>
+where
+    C: Circuit + Conversion<T1, T2>,
+    C::Config: HasVartype<T1> + HasVartype<T2>,
 {
     /// Converts the const with inner type T1 into const with outer type T2.
     #[inline(always)]
@@ -297,8 +354,11 @@ impl<C: Circuit + HasVartype<T1> + HasVartype<T2> + Conversion<T1, T2>, T1: 'sta
     }
 }
 
-impl<C: Circuit + HasVartype<T1> + HasVartype<T2> + Conversion<T1, T2>, T1: 'static, T2: 'static>
+impl<C, T1: 'static, T2: 'static>
     _Into<Var<C, T2>> for Const<C, T1>
+where
+    C: Circuit + Conversion<T1, T2>,
+    C::Config: HasVartype<T1> + HasVartype<T2>,
 {
     /// Converts the const with inner type T1 into variable with outer type T2.
     #[inline(always)]
@@ -307,7 +367,11 @@ impl<C: Circuit + HasVartype<T1> + HasVartype<T2> + Conversion<T1, T2>, T1: 'sta
     }
 }
 
-impl<C: Circuit + HasVartype<T>, T: 'static> ToRawAddr<C> for Const<C, T> {
+impl<C, T: 'static> ToRawAddr<C> for Const<C, T>
+where
+    C: Circuit,
+    C::Config: HasVartype<T>,
+{
     fn to_raw_addr(&self) -> <C as Circuit>::RawAddr {
         self.raw_addr
     }
@@ -316,39 +380,55 @@ impl<C: Circuit + HasVartype<T>, T: 'static> ToRawAddr<C> for Const<C, T> {
 // ---------CONSTR RHS---------
 
 pub trait ConstrRhss : Circuit + ConstrRhsFlag {
-    type ConstrRhs<T> : Copy + ToRawAddr<Self> where T: 'static, Self : HasSigtype<T>;
-    fn constr_rhs_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::ConstrRhs<T> where Self : HasSigtype<T>;
-    fn alloc_constr_rhs<T: 'static>(&mut self) -> Self::ConstrRhs<T> where Self : HasSigtype<T>;
+    type ConstrRhs<T> : Copy + ToRawAddr<Self> where T: 'static, Self::Config : HasSigtype<T>;
+    fn constr_rhs_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::ConstrRhs<T> where Self::Config : HasSigtype<T>;
+    fn alloc_constr_rhs<T: 'static>(&mut self) -> Self::ConstrRhs<T> where Self::Config : HasSigtype<T>;
 }
 
 impl<C : Circuit + ConstrRhsFlag> ConstrRhss for C {
-    type ConstrRhs<T> = ConstrRhs<C, T> where T: 'static, Self : HasSigtype<T>;
+    type ConstrRhs<T> = ConstrRhs<C, T> where T: 'static, Self::Config : HasSigtype<T>;
 
-    fn constr_rhs_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::ConstrRhs<T> where Self : HasSigtype<T> {
+    fn constr_rhs_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::ConstrRhs<T> where Self::Config : HasSigtype<T> {
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_constr_rhs(raw_addr));
         ConstrRhs {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_constr_rhs<T: 'static>(&mut self) -> Self::ConstrRhs<T> where Self : HasSigtype<T> {
+    fn alloc_constr_rhs<T: 'static>(&mut self) -> Self::ConstrRhs<T> where Self::Config : HasSigtype<T> {
         let raw_addr = self._alloc_raw::<T>();
         self._set_constr_rhs_flag(raw_addr, true);
         self.constr_rhs_from_raw_addr(raw_addr)
     }
 }
 
-pub struct ConstrRhs<C: Circuit + HasSigtype<T>, T: 'static> {
+pub struct ConstrRhs<C, T: 'static>
+where
+    C: Circuit,
+    C::Config: HasSigtype<T>
+{
     raw_addr : C::RawAddr,
     _marker : PhantomData<T>,
 }
-impl<C: Circuit + HasSigtype<T>, T: 'static> Clone for ConstrRhs<C, T> {
+impl<C:, T: 'static> Clone for ConstrRhs<C, T>
+where
+    C: Circuit,
+    C::Config: HasSigtype<T>,
+{
     fn clone(&self) -> Self {
         Self { raw_addr: self.raw_addr.clone(), _marker: PhantomData }
     }
 }
-impl<C: Circuit + HasSigtype<T>, T: 'static> Copy for ConstrRhs<C, T> {}
+impl<C, T: 'static> Copy for ConstrRhs<C, T>
+where
+    C: Circuit,
+    C::Config:HasSigtype<T>,
+{}
 
-impl<C: Circuit + HasSigtype<T>, T: 'static> ToRawAddr<C> for ConstrRhs<C, T> {
+impl<C, T: 'static> ToRawAddr<C> for ConstrRhs<C, T>
+where
+    C: Circuit,
+    C::Config: HasSigtype<T>,
+{
     fn to_raw_addr(&self) -> <C as Circuit>::RawAddr {
         self.raw_addr
     }
@@ -368,19 +448,31 @@ impl<C: Circuit> ToRawAddr<C> for RWPermit<C> {
     }
 }
 
-impl<C: Circuit + HasVartype<T>, T: 'static> _Into<RWPermit<C>> for Var<C, T> {
+impl<C, T: 'static> _Into<RWPermit<C>> for Var<C, T> 
+where
+    C: Circuit,
+    C::Config: HasVartype<T>,
+{
     fn _into(self) -> RWPermit<C> {
         RWPermit { raw_addr: self.raw_addr }
     }
 }
 
-impl<C: Circuit + HasSigtype<T>, T: 'static> _Into<RWPermit<C>> for Sig<C, T> {
+impl<C, T: 'static> _Into<RWPermit<C>> for Sig<C, T>
+where
+    C: Circuit,
+    C::Config: HasSigtype<T>,
+{
     fn _into(self) -> RWPermit<C> {
         RWPermit { raw_addr: self.raw_addr }
     }
 }
 
-impl<C: Circuit + HasVartype<T>, T: 'static> _Into<RWPermit<C>> for Const<C, T> {
+impl<C: Circuit + HasVartype<T>, T: 'static> _Into<RWPermit<C>> for Const<C, T>
+where
+    C: Circuit,
+    C::Config: HasVartype<T>,
+{
     fn _into(self) -> RWPermit<C> {
         RWPermit { raw_addr: self.raw_addr }
     }
@@ -397,7 +489,11 @@ impl<C: Circuit> ToRawAddr<C> for CsPermit<C> {
     }
 }
 
-impl<C: Circuit + HasSigtype<T>, T: 'static> _Into<CsPermit<C>> for Sig<C, T> {
+impl<C, T: 'static> _Into<CsPermit<C>> for Sig<C, T>
+where
+    C: Circuit,
+    C::Config: HasSigtype<T>,
+{
     fn _into(self) -> CsPermit<C> {
         CsPermit { raw_addr: self.raw_addr }
     }
@@ -410,7 +506,7 @@ pub trait RWStruct<C: Circuit> {
     type FStruct;
     
     /// The same structure, but generic by circuit.
-    type TemplateStruct<C2: Circuit> : RWStruct<C2, FStruct = Self::FStruct>;
+    type TemplateStruct<C2: Circuit<Config = C::Config, F=C::F>> : RWStruct<C2, FStruct = Self::FStruct>;
 
     fn alloc_to(c: &mut C) -> Self;
         
@@ -419,7 +515,53 @@ pub trait RWStruct<C: Circuit> {
 
     fn serialize_rw(&self) -> Vec<RWPermit<C>>;
 
-    fn relocate<C2: Circuit, F: Fn(C::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2>;
+    fn relocate<C2: Circuit<Config = C::Config, F=C::F>, F: Fn(C::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2>;
+}
+
+impl<C: Circuit> RWStruct<C> for () {
+    type FStruct = ();
+
+    type TemplateStruct<C2: Circuit<Config = C::Config, F=C::F>> = ();
+
+    fn alloc_to(c: &mut C) -> Self {}
+
+    fn read_from(&self, c: &C) -> Self::FStruct {}
+
+    fn write_to(&self, c: &mut C, value: &Self::FStruct) {}
+
+    fn serialize_rw(&self) -> Vec<RWPermit<C>> {vec![]}
+
+    fn relocate<C2: Circuit<Config = C::Config, F = C::F>, F: Fn(<C as Circuit>::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2> {}
+}
+
+impl<T, C> RWStruct<C> for Sig<C, T>
+where 
+    C: Circuit,
+    C::Config: HasSigtype<T>,
+{
+    type FStruct = C::F;
+
+    type TemplateStruct<C2: Circuit<Config=C::Config, F=C::F>> = Sig<C2, T>;
+
+    fn alloc_to(c: &mut C) -> Self {
+        todo!()
+    }
+
+    fn read_from(&self, c: &C) -> Self::FStruct {
+        todo!()
+    }
+
+    fn write_to(&self, c: &mut C, value: &Self::FStruct) {
+        todo!()
+    }
+
+    fn serialize_rw(&self) -> Vec<RWPermit<C>> {
+        todo!()
+    }
+
+    fn relocate<C2: Circuit<Config = C::Config, F=C::F>, F: Fn(<C as Circuit>::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2> {
+        todo!()
+    }
 }
 
 // --------- CSSTRUCT --------
@@ -449,7 +591,7 @@ pub trait TAdvice {
 
     fn relocate <
         
-        C2: Circuit + Advices,
+        C2: Circuit<Config=<Self::C as Circuit>::Config, F=<Self::C as Circuit>::F> + Advices,
         REMAP: Fn(<Self::C  as Circuit>::RawAddr) -> C2::RawAddr
     > (&self, remap: &REMAP, c: &Self::C, target: &mut C2) -> impl TAdvice<C=C2>;
 }
@@ -469,8 +611,7 @@ impl<I: RWStruct<C>, O: RWStruct<C>, C: Circuit + Advices> TAdvice for Advice<I,
     }
 
     fn relocate <
-        
-        C2: Circuit + Advices,
+        C2: Circuit<Config=C::Config, F=C::F> + Advices,
         REMAP: Fn(<Self::C  as Circuit>::RawAddr) -> C2::RawAddr
     > (&self, remap: &REMAP, c: &C, target: &mut C2) -> impl TAdvice<C=C2> {
         
