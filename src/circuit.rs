@@ -287,22 +287,19 @@ where
 // ---------CONSTS---------
 
 pub trait Constants : Circuit + ConstantFlag {
-    type Const<T> : Copy + ToRawAddr<Self> where T: 'static, Self::Config : HasVartype<T>;
-    fn const_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Const<T> where Self::Config : HasVartype<T>;
-    fn alloc_const<T: 'static>(&mut self) -> Self::Const<T> where Self::Config : HasVartype<T>;
+    fn const_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Const<Self, T> where Self::Config : HasVartype<T>;
+    fn alloc_const<T: 'static>(&mut self) -> Const<Self, T> where Self::Config : HasVartype<T>;
 }
 
 impl<C : Circuit + ConstantFlag> Constants for C {
-    type Const<T> = Const<C, T> where T: 'static, Self::Config : HasVartype<T>;
-
-    fn const_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Const<T> where Self::Config : HasVartype<T> {
+    fn const_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Const<Self, T> where Self::Config : HasVartype<T> {
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_var(raw_addr));
         assert!(self.is_const(raw_addr));
         Const {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_const<T: 'static>(&mut self) -> Self::Const<T> where Self::Config : HasVartype<T> {
+    fn alloc_const<T: 'static>(&mut self) -> Const<Self, T> where Self::Config : HasVartype<T> {
         let raw_addr = self._alloc_raw::<T>();
         self._set_const_flag(raw_addr, true);
         self._set_var_flag(raw_addr, true);
@@ -374,21 +371,18 @@ where
 // ---------CONSTR RHS---------
 
 pub trait ConstrRhss : Circuit + ConstrRhsFlag {
-    type ConstrRhs<T> : Copy + ToRawAddr<Self> where T: 'static, Self::Config : HasSigtype<T>;
-    fn constr_rhs_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::ConstrRhs<T> where Self::Config : HasSigtype<T>;
-    fn alloc_constr_rhs<T: 'static>(&mut self) -> Self::ConstrRhs<T> where Self::Config : HasSigtype<T>;
+    fn constr_rhs_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> ConstrRhs<Self, T> where Self::Config : HasSigtype<T>;
+    fn alloc_constr_rhs<T: 'static>(&mut self) -> ConstrRhs<Self, T> where Self::Config : HasSigtype<T>;
 }
 
 impl<C : Circuit + ConstrRhsFlag> ConstrRhss for C {
-    type ConstrRhs<T> = ConstrRhs<C, T> where T: 'static, Self::Config : HasSigtype<T>;
-
-    fn constr_rhs_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::ConstrRhs<T> where Self::Config : HasSigtype<T> {
+    fn constr_rhs_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> ConstrRhs<Self, T> where Self::Config : HasSigtype<T> {
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_constr_rhs(raw_addr));
         ConstrRhs {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_constr_rhs<T: 'static>(&mut self) -> Self::ConstrRhs<T> where Self::Config : HasSigtype<T> {
+    fn alloc_constr_rhs<T: 'static>(&mut self) -> ConstrRhs<Self, T> where Self::Config : HasSigtype<T> {
         let raw_addr = self._alloc_raw::<T>();
         self._set_constr_rhs_flag(raw_addr, true);
         self.constr_rhs_from_raw_addr(raw_addr)
