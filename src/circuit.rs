@@ -125,21 +125,18 @@ pub trait ConstantFlag : Circuit + VariableFlag {
 
 
 pub trait Variables : Circuit + VariableFlag {
-    type Var<T> : Copy + ToRawAddr<Self> where T: 'static, Self::Config : HasVartype<T>;
-    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Var<T> where Self::Config : HasVartype<T>;
-    fn alloc_var<T: 'static>(&mut self) -> Self::Var<T> where Self::Config : HasVartype<T>;
+    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Var<Self, T> where Self::Config : HasVartype<T>;
+    fn alloc_var<T: 'static>(&mut self) -> Var<Self, T> where Self::Config : HasVartype<T>;
 }
 
 impl<C : Circuit + VariableFlag> Variables for C {
-    type Var<T : 'static> = Var<C, T> where C::Config : HasVartype<T>;
-
-    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Var<T> where C::Config : HasVartype<T>{
+    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Var<Self, T> where C::Config : HasVartype<T>{
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_var(raw_addr));
         Var {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_var<T: 'static>(&mut self) -> Self::Var<T> where Self::Config : HasVartype<T>, {
+    fn alloc_var<T: 'static>(&mut self) -> Var<Self, T> where Self::Config : HasVartype<T>, {
         let raw_addr = self._alloc_raw::<T>();
         self._set_var_flag(raw_addr, true);
         self.var_from_raw_addr(raw_addr)
