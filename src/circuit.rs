@@ -125,21 +125,18 @@ pub trait ConstantFlag : Circuit + VariableFlag {
 
 
 pub trait Variables : Circuit + VariableFlag {
-    type Var<T> : Copy + ToRawAddr<Self> where T: 'static, Self::Config : HasVartype<T>;
-    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Var<T> where Self::Config : HasVartype<T>;
-    fn alloc_var<T: 'static>(&mut self) -> Self::Var<T> where Self::Config : HasVartype<T>;
+    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Var<Self, T> where Self::Config : HasVartype<T>;
+    fn alloc_var<T: 'static>(&mut self) -> Var<Self, T> where Self::Config : HasVartype<T>;
 }
 
 impl<C : Circuit + VariableFlag> Variables for C {
-    type Var<T : 'static> = Var<C, T> where C::Config : HasVartype<T>;
-
-    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Var<T> where C::Config : HasVartype<T>{
+    fn var_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Var<Self, T> where C::Config : HasVartype<T>{
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_var(raw_addr));
         Var {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_var<T: 'static>(&mut self) -> Self::Var<T> where Self::Config : HasVartype<T>, {
+    fn alloc_var<T: 'static>(&mut self) -> Var<Self, T> where Self::Config : HasVartype<T>, {
         let raw_addr = self._alloc_raw::<T>();
         self._set_var_flag(raw_addr, true);
         self.var_from_raw_addr(raw_addr)
@@ -198,25 +195,22 @@ where
 // ---------SIGS---------
 
 pub trait Signals : Circuit + SignalFlag + PrimarySignalFlag {
-    type Sig<T> : Copy + ToRawAddr<Self> + RWStruct<Self> where T: 'static, Self::Config : HasSigtype<T>;
-    fn sig_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Sig<T> where Self::Config : HasSigtype<T>;
+    fn sig_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Sig<Self, T> where Self::Config : HasSigtype<T>;
     /// Allocates signal and commits it.
-    fn alloc_sig<T: 'static>(&mut self) -> Self::Sig<T> where  Self::Config : HasSigtype<T>;
+    fn alloc_sig<T: 'static>(&mut self) -> Sig<Self, T> where  Self::Config : HasSigtype<T>;
     /// Allocates signal and does not commit it. Unsafe. Should be only used in conjunction with linear combination constraint.
-    fn _alloc_sig_dependent<T: 'static>(&mut self) -> Self::Sig<T> where  Self::Config : HasSigtype<T>;
+    fn _alloc_sig_dependent<T: 'static>(&mut self) -> Sig<Self, T> where  Self::Config : HasSigtype<T>;
 }
 
 impl<C : Circuit + SignalFlag + PrimarySignalFlag> Signals for C {
-    type Sig<T : 'static> = Sig<C, T> where <C as Circuit>::Config: HasSigtype<T>;
-
-    fn sig_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Self::Sig<T> where  Self::Config : HasSigtype<T> {
+    fn sig_from_raw_addr<T: 'static>(&self, raw_addr: Self::RawAddr) -> Sig<Self, T> where  Self::Config : HasSigtype<T> {
         assert!(self.inner_type(raw_addr) == TypeId::of::<T>());
         assert!(self.is_var(raw_addr));
         assert!(self.is_sig(raw_addr));
         Sig {raw_addr, _marker : PhantomData}
     }
 
-    fn alloc_sig<T: 'static>(&mut self) -> Self::Sig<T> where Self::Config : HasSigtype<T> {
+    fn alloc_sig<T: 'static>(&mut self) -> Sig<Self, T> where Self::Config : HasSigtype<T> {
         let raw_addr = self._alloc_raw::<T>();
         self._set_var_flag(raw_addr, true);
         self._set_sig_flag(raw_addr, true);
@@ -224,7 +218,7 @@ impl<C : Circuit + SignalFlag + PrimarySignalFlag> Signals for C {
         self.sig_from_raw_addr(raw_addr)
     }
 
-    fn _alloc_sig_dependent<T: 'static>(&mut self) -> Self::Sig<T> where Self::Config : HasSigtype<T> {
+    fn _alloc_sig_dependent<T: 'static>(&mut self) -> Sig<Self, T> where Self::Config : HasSigtype<T> {
         let raw_addr = self._alloc_raw::<T>();
         self._set_var_flag(raw_addr, true);
         self._set_sig_flag(raw_addr, true);

@@ -40,11 +40,11 @@ where
     fn tag_hasher(&self, items: Vec<u32>) -> Self::Field;
     fn serialized_domain_separator(&self) -> Vec<u32>;
     fn initialize_capacity(&mut self, c: &mut C, capacity: Self::Field);
-    fn read_rate_element(&self, offset: usize) -> C::Sig<C::F>;
-    fn add_rate_element(&mut self, offset: usize, value: C::Sig<C::F>);
+    fn read_rate_element(&self, offset: usize) -> Sig<C, C::F>;
+    fn add_rate_element(&mut self, offset: usize, value: Sig<C, C::F>);
     fn permute(&mut self, c: &mut C);
 
-    fn absorb_one(&mut self, c: &mut C, input: C::Sig<C::F>) {
+    fn absorb_one(&mut self, c: &mut C, input: Sig<C, C::F>) {
         if self.absorb_pos() == self.rate() {
             self.permute(c);
             self.set_absorb_pos(0);
@@ -56,7 +56,7 @@ where
         self.set_squeeze_pos(self.rate())
     }
 
-    fn squeeze_one(&mut self, c: &mut C) -> C::Sig<C::F> {
+    fn squeeze_one(&mut self, c: &mut C) -> Sig<C, C::F> {
         if self.squeeze_pos() == self.rate() {
             self.permute(c);
             self.set_absorb_pos(0);
@@ -98,7 +98,7 @@ where
     C::Config: HasSigtype<<C as Circuit>::F>,
 {
     fn new(c: &mut C) -> Self;
-    fn absorb(&mut self, c: &mut C, inputs: Vec<C::Sig<C::F>>) {
+    fn absorb(&mut self, c: &mut C, inputs: Vec<Sig<C, C::F>>) {
         if inputs.len() == 0 {
             return
         }
@@ -109,7 +109,7 @@ where
         }       
     }
 
-    fn squeeze(&mut self, c: &mut C, length: usize) -> Vec<C::Sig<C::F>> {
+    fn squeeze(&mut self, c: &mut C, length: usize) -> Vec<Sig<C, C::F>> {
         if length == 0 {
             return vec![];
         }
@@ -140,11 +140,11 @@ where
         <ImplInstance::Sponge as TSponge<Self>>::new(self)
     }
 
-    fn absorb(&mut self, sponge: &mut ImplInstance::Sponge, inputs: Vec<Self::Sig<Self::F>>) {
+    fn absorb(&mut self, sponge: &mut ImplInstance::Sponge, inputs: Vec<Sig<Self, Self::F>>) {
         TSponge::absorb(sponge, self, inputs)
     }
 
-    fn squeeze(&mut self, sponge: &mut ImplInstance::Sponge, length: usize) -> Vec<Self::Sig<Self::F>> {
+    fn squeeze(&mut self, sponge: &mut ImplInstance::Sponge, length: usize) -> Vec<Sig<Self, Self::F>> {
         TSponge::squeeze(sponge, self, length)
     }
 

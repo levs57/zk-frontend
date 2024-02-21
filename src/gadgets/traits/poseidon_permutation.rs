@@ -9,8 +9,8 @@ where
     C::Config: HasSigtype<<C as Circuit>::F>,
 {
     log: Vec<SpongeAction>,
-    state: Vec<C::Sig<C::F>>,
-    initial_capacity: C::Sig<C::F>,
+    state: Vec<Sig<C, C::F>>,
+    initial_capacity: Sig<C, C::F>,
     sep: usize,
     absorb_pos: usize,
     squeeze_pos: usize,
@@ -73,11 +73,11 @@ where
         vec![self.sep as u32]
     }
 
-    fn read_rate_element(&self, offset: usize) -> C::Sig<C::F> {
+    fn read_rate_element(&self, offset: usize) -> Sig<C, C::F> {
         self.state[1 + offset]
     }
 
-    fn add_rate_element(&mut self, offset: usize, value: C::Sig<C::F>) {
+    fn add_rate_element(&mut self, offset: usize, value: Sig<C, C::F>) {
         self.state[1 + offset] = value
     }
 
@@ -86,7 +86,7 @@ where
     }
 
     fn initialize_capacity(&mut self, c: &mut C, capacity: Self::Field) {
-        // c.advise_to_unassigned(|_| capacity, &(), &self.initial_capacity)
+        c.advise_to_unassigned(|_| capacity, &(), &self.initial_capacity)
     }
 }
 
@@ -105,7 +105,7 @@ where
     C: Circuit + Signals + Pow5 + LinearCombination,
     C::Config: HasSigtype<<C as Circuit>::F>,
 {
-    fn poseidon_permutation(c: &mut C, inputs: Vec<C::Sig<C::F>>) -> Vec<C::Sig<C::F>>;
+    fn poseidon_permutation(c: &mut C, inputs: Vec<Sig<C, C::F>>) -> Vec<Sig<C, C::F>>;
 }
 
 pub trait PoseidonPermutation
@@ -114,7 +114,7 @@ where
     Self::Config: HasSigtype<<Self as Circuit>::F>,
 {
     type ImplInstance: PoseidonPermutationImpl<Self>;
-    fn poseidon(&mut self, inputs: Vec<Self::Sig<Self::F>>) -> Vec<Self::Sig<Self::F>> {
+    fn poseidon(&mut self, inputs: Vec<Sig<Self, Self::F>>) -> Vec<Sig<Self, Self::F>> {
         Self::ImplInstance::poseidon_permutation(self, inputs)
     }
 }
