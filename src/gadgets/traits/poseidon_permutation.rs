@@ -1,18 +1,26 @@
-use crate::circuit::{Circuit, HasSigtype, Sig, Signals, Unassigned, Variables};
+use crate::circuit::{Advices, Circuit, HasSigtype, Sig, Signals, Variables};
 
 use super::sponge::{TSpongePrivate, TSponge, SpongeAction};
 use super::atoms::{Pow5, LinearCombination};
 
-pub struct PoseidonSponge<C: Circuit + Signals + Variables + HasSigtype<<C as Circuit>::F>> {
+pub struct PoseidonSponge<C>
+where
+    C: Circuit + Signals + Variables,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
     log: Vec<SpongeAction>,
     state: Vec<C::Sig<C::F>>,
-    initial_capacity: Unassigned<C, C::F, C::Sig<C::F>>,
+    initial_capacity: C::Sig<C::F>,
     sep: usize,
     absorb_pos: usize,
     squeeze_pos: usize,
 }
 
-impl<C: Circuit + PoseidonPermutation + HasSigtype<<C as Circuit>::F> + Signals> TSpongePrivate<C> for PoseidonSponge<C> {
+impl<C> TSpongePrivate<C> for PoseidonSponge<C>
+where
+    C: Circuit + PoseidonPermutation + Signals + Advices,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
     type DomainSeparator = usize;
     type Field = C::F;
 
@@ -43,9 +51,9 @@ impl<C: Circuit + PoseidonPermutation + HasSigtype<<C as Circuit>::F> + Signals>
             sep,
             absorb_pos: 0,
             squeeze_pos: 0,
-            initial_capacity: c.alloc_sig_committed(),
+            initial_capacity: c.alloc_sig(),
         };
-        ret.state.push(ret.initial_capacity.value());
+        ret.state.push(ret.initial_capacity);
         ret
     }
 
@@ -78,21 +86,33 @@ impl<C: Circuit + PoseidonPermutation + HasSigtype<<C as Circuit>::F> + Signals>
     }
 
     fn initialize_capacity(&mut self, c: &mut C, capacity: Self::Field) {
-
+        // c.advise_to_unassigned(|_| capacity, &(), &self.initial_capacity)
     }
 }
 
-impl<C: Circuit + PoseidonPermutation + HasSigtype<<C as Circuit>::F> + Signals> TSponge<C> for PoseidonSponge<C> {
+impl<C> TSponge<C> for PoseidonSponge<C>
+where
+    C: Circuit + PoseidonPermutation + Signals + Advices,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
     fn new(c: &mut C) -> Self {
         todo!()
     }
 }
 
-pub trait PoseidonPermutationImpl<C : Circuit + Pow5 + LinearCombination + Signals> {
+pub trait PoseidonPermutationImpl<C>
+where
+    C: Circuit + Signals + Pow5 + LinearCombination,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
     fn poseidon_permutation(c: &mut C, inputs: Vec<C::Sig<C::F>>) -> Vec<C::Sig<C::F>>;
 }
 
-pub trait PoseidonPermutation: Circuit + HasSigtype<<Self as Circuit>::F> + Pow5 + LinearCombination + Signals {
+pub trait PoseidonPermutation
+where
+    Self: Circuit + Signals + Pow5 + LinearCombination,
+    Self::Config: HasSigtype<<Self as Circuit>::F>,
+{
     type ImplInstance: PoseidonPermutationImpl<Self>;
     fn poseidon(&mut self, inputs: Vec<Self::Sig<Self::F>>) -> Vec<Self::Sig<Self::F>> {
         Self::ImplInstance::poseidon_permutation(self, inputs)

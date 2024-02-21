@@ -19,7 +19,11 @@ impl SpongeAction {
     }   
 }
 
-pub trait TSpongePrivate<C: Circuit + HasSigtype<<C as Circuit>::F> + Signals> {
+pub trait TSpongePrivate<C>
+where
+    C: Circuit + Signals,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
     type DomainSeparator;
     type Field;
 
@@ -88,7 +92,11 @@ pub trait TSpongePrivate<C: Circuit + HasSigtype<<C as Circuit>::F> + Signals> {
     }
 }
 
-pub trait TSponge<C: Circuit + HasSigtype<<C as Circuit>::F> + Signals> : TSpongePrivate<C> {
+pub trait TSponge<C> : TSpongePrivate<C>
+where
+    C: Circuit + Signals,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
     fn new(c: &mut C) -> Self;
     fn absorb(&mut self, c: &mut C, inputs: Vec<C::Sig<C::F>>) {
         if inputs.len() == 0 {
@@ -115,11 +123,19 @@ pub trait TSponge<C: Circuit + HasSigtype<<C as Circuit>::F> + Signals> : TSpong
     }
 }
 
-pub trait PoseidonImpl<C : Circuit + HasSigtype<<C as Circuit>::F> + Signals> {
+pub trait PoseidonImpl<C>
+where
+    C: Circuit + Signals,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
     type Sponge: TSponge<C>;
 }
 
-pub trait Poseidon<ImplInstance: PoseidonImpl<Self>> : Circuit + HasSigtype<<Self as Circuit>::F> + Signals {
+pub trait Poseidon<ImplInstance: PoseidonImpl<Self>>
+where
+    Self: Circuit + Signals,
+    Self::Config: HasSigtype<<Self as Circuit>::F>,
+{
     fn new(&mut self) -> ImplInstance::Sponge {
         <ImplInstance::Sponge as TSponge<Self>>::new(self)
     }

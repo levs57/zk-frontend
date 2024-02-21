@@ -2,7 +2,11 @@ use num_bigint::BigUint;
 
 use crate::circuit::{Circuit, HasSigtype, Sig};
 
-pub trait RangecheckImpl<C: Circuit + HasSigtype<<C as Circuit>::F>> {
+pub trait RangecheckImpl<C>
+where
+    C: Circuit,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
     /// Returns upper bound of this signal.
     /// Returns None if no bound is set.
     fn bound(c: & C, sig: Sig<C, C::F>) -> Option<BigUint>;
@@ -123,7 +127,11 @@ fn log_ceil(b: &BigUint, x: &BigUint) -> u32 {
 
 
 
- pub trait Rangecheck : Circuit + HasSigtype<<Self as Circuit>::F> {
+ pub trait Rangecheck
+ where
+    Self: Circuit,
+    Self::Config: HasSigtype<<Self as Circuit>::F>,
+ {
 
     type IRangecheck: RangecheckImpl<Self>;
 
