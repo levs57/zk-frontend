@@ -1,13 +1,21 @@
-use crate::circuit::{Circuit, Finalizes, Sig, StandardVariables};
+use crate::circuit::{Circuit, HasSigtype, Sig};
 
-pub trait NonzerosImpl<C: Circuit + StandardVariables + Finalizes> {
-    fn enforce_nonzero(c: &mut C, x: Sig<C>);
+pub trait NonzerosImpl<C>
+where
+    C: Circuit,
+    C::Config: HasSigtype<<C as Circuit>::F>,
+{
+    fn enforce_nonzero(c: &mut C, x: Sig<C, C::F>);
 }
 
-pub trait Nonzeros<ImplInstance: NonzerosImpl<Self>> : Circuit + StandardVariables + Finalizes {
-    /// Pushes the signal in special container to perform batched nonzero check.
-    /// Trait Finalizes signifies the necessity to perform the nonzero check during finalization.
-    fn enforce_nonzero(&mut self, x: Sig<Self>) {
-        ImplInstance::enforce_nonzero(self, x);
+pub trait Nonzeros
+where
+    Self: Circuit,
+    Self::Config: HasSigtype<<Self as Circuit>::F>,
+{
+    type INonzeros: NonzerosImpl<Self>;
+    
+    fn enforce_nonzero(&mut self, x: Sig<Self, Self::F>) {
+        Self::INonzeros::enforce_nonzero(self, x);
     }
 }
