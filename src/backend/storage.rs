@@ -1,15 +1,15 @@
 pub trait Storage {
-    type Addr<T>;
+    type RawAddr;
 }
 
 pub trait AllocatorOf<T>: Storage {
-    fn allocate(&mut self) -> <Self as Storage>::Addr<T>;
+    fn allocate(&mut self) -> <Self as Storage>::RawAddr;
 }
 
 pub trait WriterOf<T>: Storage {
-    fn put(&mut self, addr: &Self::Addr<T>, val: T);
+    fn put(&mut self, addr: &Self::RawAddr, val: T);
 }
 
 pub trait ReaderOf<T>: Storage {
-    fn get(&self, addr: &Self::Addr<T>) -> &T;
+    fn get(&self, addr: &Self::RawAddr) -> &T;
 }
