@@ -1,3 +1,4 @@
+use crate::backend::storage::{ReaderOf, WriterOf};
 use crate::circuit::{Advices, Circuit, HasSigtype, Sig, Signals, Variables};
 
 use super::sponge::{TSpongePrivate, TSponge, SpongeAction};
@@ -20,6 +21,7 @@ impl<C> TSpongePrivate<C> for PoseidonSponge<C>
 where
     C: Circuit + PoseidonPermutation + Signals + Advices,
     C::Config: HasSigtype<<C as Circuit>::F>,
+    C::Storage: ReaderOf<C::F> + WriterOf<C::F>,
 {
     type DomainSeparator = usize;
     type Field = C::F;
@@ -94,6 +96,7 @@ impl<C> TSponge<C> for PoseidonSponge<C>
 where
     C: Circuit + PoseidonPermutation + Signals + Advices,
     C::Config: HasSigtype<<C as Circuit>::F>,
+    C::Storage: ReaderOf<C::F> + WriterOf<C::F>,
 {
     fn new(c: &mut C) -> Self {
         todo!()

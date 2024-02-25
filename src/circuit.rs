@@ -3,6 +3,8 @@ use std::{any::TypeId, marker::PhantomData, sync::Arc};
 use ff::PrimeField;
 use num_bigint::BigUint;
 
+use crate::backend::storage::{ReaderOf, Storage, WriterOf};
+
 
 
 pub trait FieldUtils {
@@ -72,10 +74,13 @@ pub trait Circuit : Conversion<Self::F, Self::F> + Sized{
     type F : PrimeField;
     type RawAddr : Copy;
     type Config;
-
+    type Storage: Storage;
+    
     fn inner_type(&self, addr: Self::RawAddr) -> TypeId;
     /// Constructs a new raw address with inner type T. All boolean flags are unset, all other flags are None.
     fn _alloc_raw<T: 'static>(&mut self) -> Self::RawAddr where Self::Config : HasVartype<T>;
+
+    fn storage_addr<T>(addr: Self::RawAddr) -> <<Self as Circuit>::Storage as Storage>::Addr<T>;
 }
 
 pub trait VariableFlag : Circuit {
@@ -171,8 +176,8 @@ where
 impl<C: Circuit + VariableFlag + HasVartype<T1> + HasVartype<T2> + Conversion<T1, T2>, T1: 'static, T2: 'static>
     _Into<Var<C, T2>> for Var<C, T1> 
 where
-    C: Circuit + VariableFlag + Conversion<T1, T2>,
-    C::Config: HasVartype<T1> + HasVartype<T2>,
+    C: Circuit + VariableFlag,
+    C::Config: HasVartype<T1> + HasVartype<T2> + Conversion<T1, T2>,
 {
     /// Converts the variable with inner type T1 into variable with outer type T2.
     #[inline(always)]
@@ -190,7 +195,6 @@ where
         self.raw_addr
     }
 }
-
 
 // ---------SIGS---------
 
@@ -251,8 +255,8 @@ where
 impl<C, T1: 'static, T2: 'static>
     _Into<Sig<C, T2>> for Sig<C, T1>
 where 
-    C: Circuit + Conversion<T1, T2>,
-    C::Config: HasSigtype<T1> + HasSigtype<T2>,
+    C: Circuit,
+    C::Config: HasSigtype<T1> + HasSigtype<T2> + Conversion<T1, T2>,
 {
     /// Converts the signal with inner type T1 into signal with outer type T2.
     #[inline(always)]
@@ -264,8 +268,8 @@ where
 impl<C, T1: 'static, T2: 'static>
     _Into<Var<C, T2>> for Sig<C, T1>
 where
-    C: Circuit + Conversion<T1, T2>,
-    C::Config: HasSigtype<T1> + HasSigtype<T2>,
+    C: Circuit,
+    C::Config: HasSigtype<T1> + HasSigtype<T2> + Conversion<T1, T2>,
 {
     /// Converts the signal with inner type T1 into variable with outer type T2.
     #[inline(always)]
@@ -490,71 +494,96 @@ where
 
 // --------- RWSTRUCT --------
 
-pub trait RWStruct<C: Circuit> {
+pub trait FullCircuit: Circuit + Signals + Variables + Constants {}
+
+pub trait RWStruct<C>
+where
+    C: FullCircuit
+{
     type FStruct;
     
     /// The same structure, but generic by circuit.
-    type TemplateStruct<C2: Circuit<Config = C::Config, F=C::F>> : RWStruct<C2, FStruct = Self::FStruct>;
+    type TemplateStruct<C2: FullCircuit<Config = C::Config, F = C::F, Storage = C::Storage>> : RWStruct<C2, FStruct = Self::FStruct>;
 
     fn alloc_to(c: &mut C) -> Self;
         
-    fn read_from(&self, c: &C) -> Self::FStruct;
-    fn write_to(&self, c: &mut C, value: &Self::FStruct);
+    fn read_from(&self, s: &C::Storage) -> Self::FStruct;
+    fn write_to(&self, s: &mut C::Storage, value: &Self::FStruct);
 
     fn serialize_rw(&self) -> Vec<RWPermit<C>>;
 
-    fn relocate<C2: Circuit<Config = C::Config, F=C::F>, F: Fn(C::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2>;
+    fn relocate<C2: FullCircuit<Config = C::Config, F = C::F, Storage = C::Storage>, F: Fn(C::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2>;
 }
 
-impl<C: Circuit> RWStruct<C> for () {
+impl<C> RWStruct<C> for ()
+where
+    C: FullCircuit
+{
     type FStruct = ();
 
-    type TemplateStruct<C2: Circuit<Config = C::Config, F=C::F>> = ();
+    type TemplateStruct<C2: FullCircuit<Config = C::Config, F = C::F, Storage = C::Storage>> = ();
 
     fn alloc_to(c: &mut C) -> Self {}
 
-    fn read_from(&self, c: &C) -> Self::FStruct {}
+    fn read_from(&self, s: &C::Storage) -> Self::FStruct {}
 
-    fn write_to(&self, c: &mut C, value: &Self::FStruct) {}
+    fn write_to(&self, s: &mut C::Storage, value: &Self::FStruct) {}
 
     fn serialize_rw(&self) -> Vec<RWPermit<C>> {vec![]}
 
-    fn relocate<C2: Circuit<Config = C::Config, F = C::F>, F: Fn(<C as Circuit>::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2> {}
+    fn relocate<C2: FullCircuit<Config = C::Config, F = C::F, Storage = C::Storage>, F: Fn(<C as Circuit>::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2> {}
 }
 
 impl<T, C> RWStruct<C> for Sig<C, T>
 where 
-    C: Circuit,
-    C::Config: HasSigtype<T>,
+    T: 'static + Clone,
+    C: FullCircuit,
+    C::Config: HasSigtype<T> + Conversion<T, C::F> + Conversion<C::F, T> + Conversion<T, T>,
+    C::Storage: ReaderOf<T> + WriterOf<T>,
+    Sig<C, T>: _Into<Var<C, T>> + _Into<RWPermit<C>>,
 {
     type FStruct = C::F;
 
-    type TemplateStruct<C2: Circuit<Config=C::Config, F=C::F>> = Sig<C2, T>;
+    type TemplateStruct<C2: FullCircuit<Config=C::Config, F = C::F, Storage = C::Storage>> = Sig<C2, T> where Sig<C2, T>: _Into<Var<C2, T>>;
 
     fn alloc_to(c: &mut C) -> Self {
-        todo!()
+        c.alloc_sig()
     }
 
-    fn read_from(&self, c: &C) -> Self::FStruct {
-        todo!()
+    fn read_from(&self, s: &C::Storage) -> Self::FStruct {
+        <<C as Circuit>::Config as Conversion<T, C::F>>::convert(s.get(&C::storage_addr(self.raw_addr)).clone())
     }
 
-    fn write_to(&self, c: &mut C, value: &Self::FStruct) {
-        todo!()
+    fn write_to(&self, s: &mut C::Storage, value: &Self::FStruct) {
+        s.put(&C::storage_addr(self.raw_addr), <<C as Circuit>::Config as Conversion<C::F, T>>::convert(*value))
     }
 
     fn serialize_rw(&self) -> Vec<RWPermit<C>> {
-        todo!()
+        vec![self._into()]
     }
 
-    fn relocate<C2: Circuit<Config = C::Config, F=C::F>, F: Fn(<C as Circuit>::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2> {
-        todo!()
+    fn relocate<
+        C2: FullCircuit<Config = C::Config, F = C::F, Storage = C::Storage>,
+        F: Fn(<C as Circuit>::RawAddr) -> C2::RawAddr
+    >(
+        &self,
+        remap: &F, 
+        c: &C, 
+        target: &mut C2,
+    ) -> Self::TemplateStruct<C2> {
+        Sig {
+            raw_addr: remap(self.raw_addr),
+            _marker: PhantomData,
+        }
     }
 }
 
 // --------- CSSTRUCT --------
 
-pub trait CsStruct<C: Circuit> :  RWStruct<C>{
+pub trait CsStruct<C>:  RWStruct<C>
+where
+    C: FullCircuit
+{
     fn serialize_cs(&self) -> Vec<CsPermit<C>>;
 }
 
@@ -562,7 +591,7 @@ pub trait CsStruct<C: Circuit> :  RWStruct<C>{
 // --------- ADVICES ---------
 
 
-pub trait Advices : Circuit {
+pub trait Advices : FullCircuit {
 
     fn advise_to_unassigned<I: RWStruct<Self>, O: RWStruct<Self>, F: Fn(I::FStruct) -> O::FStruct>(&mut self, f: F, input: &I, output: &O);
 
@@ -579,13 +608,13 @@ pub trait TAdvice {
 
     fn relocate <
         
-        C2: Circuit<Config=<Self::C as Circuit>::Config, F=<Self::C as Circuit>::F> + Advices,
+        C2: Circuit<Config=<Self::C as Circuit>::Config, F=<Self::C as Circuit>::F, Storage = <Self::C as Circuit>::Storage> + Advices,
         REMAP: Fn(<Self::C  as Circuit>::RawAddr) -> C2::RawAddr
     > (&self, remap: &REMAP, c: &Self::C, target: &mut C2) -> impl TAdvice<C=C2>;
 }
 
 
-pub struct Advice<I: RWStruct<C>, O: RWStruct<C>, C: Circuit> {
+pub struct Advice<I: RWStruct<C>, O: RWStruct<C>, C: FullCircuit> {
     input: I,
     output: O,
     func: Arc<dyn Fn(I::FStruct) -> O::FStruct>,
@@ -599,12 +628,16 @@ impl<I: RWStruct<C>, O: RWStruct<C>, C: Circuit + Advices> TAdvice for Advice<I,
     }
 
     fn relocate <
-        C2: Circuit<Config=C::Config, F=C::F> + Advices,
+        C2: Circuit<Config=C::Config, F = C::F, Storage = C::Storage> + Advices,
         REMAP: Fn(<Self::C  as Circuit>::RawAddr) -> C2::RawAddr
     > (&self, remap: &REMAP, c: &C, target: &mut C2) -> impl TAdvice<C=C2> {
         
         let Advice{input, output, func} = self;
-        Advice{input: input.relocate(remap, c, target), output : output.relocate(remap, c, target), func : func.clone()}
+        Advice{
+            input: input.relocate(remap, c, target),
+            output : output.relocate(remap, c, target),
+            func : func.clone(),
+        }
     }
 }
 
@@ -618,4 +651,3 @@ impl<T1: _Into<T2>, T2> _From<T1> for T2 {
         value._into()
     }
 }
-
