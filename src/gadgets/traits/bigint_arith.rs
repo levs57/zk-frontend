@@ -37,22 +37,26 @@ where
     fn split_into_n_limbs(c: &mut C, sig: Sig<C, C::F>, primitive_base: &BigUint, packing: u32, num_limbs: u32) -> Vec<Sig<C, C::F>> {
         let base = primitive_base.pow(packing);
         let bound = &base.pow(num_limbs);
-        let primitive_limbs = Self::advise_split_into_n_limbs(c, sig, primitive_base, num_limbs*packing);
-        primitive_limbs.iter().map(|sig| Self::primitive_rangecheck(c, *sig, primitive_base)).count();
+        let primitive_limbs =
+            Self::advise_split_into_n_limbs(c, sig, primitive_base, num_limbs * packing);
+        primitive_limbs
+            .iter()
+            .map(|sig| Self::primitive_rangecheck(c, *sig, primitive_base))
+            .count();
         Self::assume(c, sig, &bound);
-        
+
         let mut coeffs = vec![];
         let mut power = BigUint::from(1u32);
         for _ in 0..packing {
             coeffs.push(power.clone());
             power *= primitive_base;
         }
-        
+
         let mut limbs = vec![];
         for i in 0..num_limbs {
             let mut lc = vec![];
             for j in 0..packing {
-                lc.push(primitive_limbs[(i*packing + j) as usize]);
+                lc.push(primitive_limbs[(i * packing + j) as usize]);
             }
             let limb = Self::num_linear_combination(c, &coeffs, &lc);
             limbs.push(limb);
@@ -75,13 +79,17 @@ where
         let mut limbs : Vec<_> = limbs.into_iter().map(|x|vec![*x]).collect();
         let mut i = 0;
         loop {
-            let incoming = Self::num_linear_combination(c, &vec![BigUint::from(1u32); limbs[i].len()], &limbs[i]);
+            let incoming = Self::num_linear_combination(
+                c,
+                &vec![BigUint::from(1u32); limbs[i].len()],
+                &limbs[i],
+            );
             limbs[i] = vec![];
             let term = Self::split_into_limbs_strict(c, incoming, primitive_base, packing);
             for j in 0..term.len() {
-                if limbs.len() > i+j {
-                    limbs[i+j].push(term[j]);
-                } else if limbs.len() == i+j {
+                if limbs.len() > i + j {
+                    limbs[i + j].push(term[j]);
+                } else if limbs.len() == i + j {
                     limbs.push(vec![term[j]]);
                 } else {
                     panic!();
@@ -92,10 +100,12 @@ where
                 break;
             }
         }
-        limbs.iter().map(|x|{if x.len() > 1 {panic!()} else {x[0]}}).collect()
+        limbs
+            .iter()
+            .map(|x| if x.len() > 1 { panic!() } else { x[0] })
+            .collect()
     }
 }
-
 
 /// Returns ceil(log_b(x)).
 /// Can be used to compute amount of limbs of base b necessary to hold any value in 0..x.
@@ -103,7 +113,7 @@ fn log_ceil(b: &BigUint, x: &BigUint) -> u32 {
     let mut pows = vec![b.clone()]; // powers b^{2^k}
     loop {
         let l = pows.len();
-        let pow_new = (&pows[l-1])*(&pows[l-1]);
+        let pow_new = (&pows[l - 1]) * (&pows[l - 1]);
         if &pow_new > x {
             break;
         } else {
@@ -114,15 +124,15 @@ fn log_ceil(b: &BigUint, x: &BigUint) -> u32 {
     let mut ret = 0;
     let mut approx = BigUint::from(1u32);
     for i in 0..l {
-        let k = l-i-1;
-        let approx_new = &approx*&pows[k];
+        let k = l - i - 1;
+        let approx_new = &approx * &pows[k];
         if &approx_new < x {
             approx = approx_new;
-            ret += 1<<k;
+            ret += 1 << k;
         }
     }
 
-    ret+1
+    ret + 1
 }
 
 
@@ -151,7 +161,7 @@ fn log_ceil(b: &BigUint, x: &BigUint) -> u32 {
     fn num_linear_combination(&mut self, coeffs: &[BigUint], values: &[Sig<Self, Self::F>]) -> Sig<Self, Self::F> {
         Self::IRangecheck::num_linear_combination(self, coeffs, values)
     }
-    
+
     /// Returns the product. Panics in case of bound overflow.
     fn num_mul(&mut self, a: Sig<Self, Self::F>, b: Sig<Self, Self::F>) -> Sig<Self, Self::F> {
         Self::IRangecheck::num_mul(self, a, b)
