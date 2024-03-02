@@ -1,5 +1,14 @@
+use std::marker::PhantomData;
+
+pub struct TypedAddr<S: Storage, T> {
+    pub addr: S::RawAddr,
+    pub _pd: PhantomData<T>,
+}
+
 pub trait Storage {
     type RawAddr;
+
+    fn to_raw<T>(ta: &TypedAddr<Self, T>) -> Self::RawAddr where Self: Sized;
 }
 
 pub trait AllocatorOf<T>: Storage {

@@ -1,7 +1,9 @@
-use std::{any::TypeId, marker::PhantomData, sync::Arc};
+use std::{any::TypeId, marker::PhantomData, sync::Arc, vec};
 
 use ff::PrimeField;
 use num_bigint::BigUint;
+
+use crate::backend::{api::{AllowsStruct, RTAdvice, RuntimeAdvice}, storage::{Storage, TypedAddr}};
 
 
 
@@ -12,6 +14,16 @@ pub trait FieldUtils {
 /// Bootleg Into (to avoid conflicting implementations).
 pub trait _Into<T : ?Sized> {
     fn _into(self) -> T;
+}
+
+pub trait _From<T : _Into<Self> + ?Sized> {
+    fn _from(value: T) -> Self;
+}
+
+impl<T1: _Into<T2>, T2> _From<T1> for T2 {
+    fn _from(value: T1) -> Self {
+        value._into()
+    }
 }
 
 pub trait ToRawAddr<C: Circuit> {
@@ -490,71 +502,69 @@ where
 
 // --------- RWSTRUCT --------
 
-pub trait RWStruct<C: Circuit> {
+pub trait SVStruct<C: Circuit> {
     type FStruct;
     
-    /// The same structure, but generic by circuit.
-    type TemplateStruct<C2: Circuit<Config = C::Config, F=C::F>> : RWStruct<C2, FStruct = Self::FStruct>;
-
     fn alloc_to(c: &mut C) -> Self;
-        
-    fn read_from(&self, c: &C) -> Self::FStruct;
-    fn write_to(&self, c: &mut C, value: &Self::FStruct);
-
-    fn serialize_rw(&self) -> Vec<RWPermit<C>>;
-
-    fn relocate<C2: Circuit<Config = C::Config, F=C::F>, F: Fn(C::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2>;
 }
 
-impl<C: Circuit> RWStruct<C> for () {
+pub trait CompileableStruct<C, S, F, T>: SVStruct<C>
+where
+    C: Circuit,
+    S: Storage,
+    F: Fn(C::RawAddr) -> S::RawAddr,
+    S: AllowsStruct<T>,
+{
+    fn compile(&self, s: &mut S, mapping: F) -> T;
+}
+
+
+impl<C: Circuit> SVStruct<C> for () {
     type FStruct = ();
 
-    type TemplateStruct<C2: Circuit<Config = C::Config, F=C::F>> = ();
-
     fn alloc_to(c: &mut C) -> Self {}
-
-    fn read_from(&self, c: &C) -> Self::FStruct {}
-
-    fn write_to(&self, c: &mut C, value: &Self::FStruct) {}
-
-    fn serialize_rw(&self) -> Vec<RWPermit<C>> {vec![]}
-
-    fn relocate<C2: Circuit<Config = C::Config, F = C::F>, F: Fn(<C as Circuit>::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2> {}
 }
 
-impl<T, C> RWStruct<C> for Sig<C, T>
+
+impl<C, S, F> CompileableStruct<C, S, F, ()> for ()
+where
+    C: Circuit,
+    S: Storage,
+    F: Fn(C::RawAddr) -> S::RawAddr,
+{
+    fn compile(&self, s: &mut S, mapping: F) -> () {}
+}
+
+impl<T, C> SVStruct<C> for Sig<C, T>
 where 
     C: Circuit,
     C::Config: HasSigtype<T>,
 {
     type FStruct = C::F;
 
-    type TemplateStruct<C2: Circuit<Config=C::Config, F=C::F>> = Sig<C2, T>;
-
     fn alloc_to(c: &mut C) -> Self {
         todo!()
     }
+}
 
-    fn read_from(&self, c: &C) -> Self::FStruct {
-        todo!()
-    }
-
-    fn write_to(&self, c: &mut C, value: &Self::FStruct) {
-        todo!()
-    }
-
-    fn serialize_rw(&self) -> Vec<RWPermit<C>> {
-        todo!()
-    }
-
-    fn relocate<C2: Circuit<Config = C::Config, F=C::F>, F: Fn(<C as Circuit>::RawAddr) -> C2::RawAddr>(&self, remap: &F, c: &C, target: &mut C2) -> Self::TemplateStruct<C2> {
-        todo!()
+impl<C, S, F, T> CompileableStruct<C, S, F, TypedAddr<S, T>> for Sig<C, T>
+where
+    C: Circuit,
+    C:: Config: HasSigtype<T>,
+    S: Storage + AllowsStruct<TypedAddr<S, T>>,
+    F: Fn(C::RawAddr) -> S::RawAddr,
+{
+    fn compile(&self, s: &mut S, mapping: F) -> TypedAddr<S, T> {
+        TypedAddr {
+            addr: mapping(self.raw_addr),
+            _pd: PhantomData,
+        }
     }
 }
 
 // --------- CSSTRUCT --------
 
-pub trait CsStruct<C: Circuit> :  RWStruct<C>{
+pub trait CsStruct<C: Circuit> :  SVStruct<C>{
     fn serialize_cs(&self) -> Vec<CsPermit<C>>;
 }
 
@@ -563,59 +573,61 @@ pub trait CsStruct<C: Circuit> :  RWStruct<C>{
 
 
 pub trait Advices : Circuit {
+    fn advise_to_unassigned<I: SVStruct<Self>, O: SVStruct<Self>, F: Fn(I::FStruct) -> O::FStruct>(&mut self, f: F, input: &I, output: &O);
 
-    fn advise_to_unassigned<I: RWStruct<Self>, O: RWStruct<Self>, F: Fn(I::FStruct) -> O::FStruct>(&mut self, f: F, input: &I, output: &O);
-
-    fn advise<I: RWStruct<Self>, O: RWStruct<Self>, F: Fn(I::FStruct) -> O::FStruct>(&mut self, f: F, input: &I) -> O {
+    fn advise<I: SVStruct<Self>, O: SVStruct<Self>, F: Fn(I::FStruct) -> O::FStruct>(&mut self, f: F, input: &I) -> O {
         let output = O::alloc_to(self);
         self.advise_to_unassigned(f, input, &output);
         output
     }
 }
 
-pub trait TAdvice {
-    type C: Circuit;
-    fn call(self, c: &mut Self::C);
-
-    fn relocate <
-        
-        C2: Circuit<Config=<Self::C as Circuit>::Config, F=<Self::C as Circuit>::F> + Advices,
-        REMAP: Fn(<Self::C  as Circuit>::RawAddr) -> C2::RawAddr
-    > (&self, remap: &REMAP, c: &Self::C, target: &mut C2) -> impl TAdvice<C=C2>;
+pub trait TAdvice<C, S, F>
+where
+    C: Circuit,
+    S: Storage,
+    F: Fn(C::RawAddr) -> S::RawAddr,
+{
+    fn compile(&self, s: &mut S, mapping: F) -> impl RTAdvice<S>;
 }
 
-
-pub struct Advice<I: RWStruct<C>, O: RWStruct<C>, C: Circuit> {
+pub struct Advice<I, DI, O, DO, C, S, F>
+where
+    I: SVStruct<C>,
+    I: CompileableStruct<C, S, F, DI>,
+    S: AllowsStruct<DI>,
+    O: SVStruct<C>,
+    O: CompileableStruct<C, S, F, DO>,
+    S: AllowsStruct<DO>,
+    C: Circuit,
+    S: Storage,
+    F: Fn(C::RawAddr) -> S::RawAddr,
+{
     input: I,
     output: O,
-    func: Arc<dyn Fn(I::FStruct) -> O::FStruct>,
+    func: Arc<dyn Fn(<S as AllowsStruct<DI>>::DataSturct) -> <S as AllowsStruct<DO>>::DataSturct>,
+    _pd: PhantomData<(C, F)>,
 }
 
-impl<I: RWStruct<C>, O: RWStruct<C>, C: Circuit + Advices> TAdvice for Advice<I, O, C> {
-    type C = C;
-
-    fn call(self, c: &mut Self::C) {
-        todo!()
-    }
-
-    fn relocate <
-        C2: Circuit<Config=C::Config, F=C::F> + Advices,
-        REMAP: Fn(<Self::C  as Circuit>::RawAddr) -> C2::RawAddr
-    > (&self, remap: &REMAP, c: &C, target: &mut C2) -> impl TAdvice<C=C2> {
-        
-        let Advice{input, output, func} = self;
-        Advice{input: input.relocate(remap, c, target), output : output.relocate(remap, c, target), func : func.clone()}
-    }
-}
-
-
-pub trait _From<T : _Into<Self> + ?Sized> {
-    fn _from(value: T) -> Self;
-}
-
-impl<T1: _Into<T2>, T2> _From<T1> for T2 {
-    fn _from(value: T1) -> Self {
-        value._into()
+impl<I, DI, O, DO, C, S, F> TAdvice<C, S, F> for Advice<I, DI, O, DO, C, S, F>
+where
+    I: SVStruct<C>,
+    I: CompileableStruct<C, S, F, DI>,
+    S: AllowsStruct<DI>,
+    O: SVStruct<C>,
+    O: CompileableStruct<C, S, F, DO>,
+    S: AllowsStruct<DO>,
+    C: Circuit,
+    S: Storage,
+    F: Clone + Fn(C::RawAddr) -> S::RawAddr,
+{
+    fn compile(&self, s: &mut S, mapping: F) -> impl RTAdvice<S> {
+        RuntimeAdvice {
+            input: self.input.compile(s, mapping.clone()),
+            output: self.output.compile(s, mapping),
+            func: self.func.clone(),
+        }
     }
 }
+
 

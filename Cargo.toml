@@ -12,3 +12,4 @@ ff = "0.13.0"
 halo2curves = {git = "https://github.com/privacy-scaling-explorations/halo2curves" }
 macros = {path="./src/macros"}
 num-bigint = "0.4.4"
+itertools = "*"
