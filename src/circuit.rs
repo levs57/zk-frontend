@@ -1,10 +1,9 @@
-use std::{any::TypeId, marker::PhantomData, sync::Arc, vec};
+use std::{any::TypeId, marker::PhantomData, sync::Arc};
 
 use ff::PrimeField;
 use num_bigint::BigUint;
 
-use crate::backend::{api::{AllowsStruct, RTAdvice, RuntimeAdvice}, storage::{Storage, TypedAddr}};
-
+use crate::{advices::{CompileableStruct, DataStruct, TAdvice}, backend::{api::{AllowsStruct, RuntimeAdvice, RTAdvice}, storage::{Storage, TypedAddr}}};
 
 
 pub trait FieldUtils {
@@ -502,40 +501,18 @@ where
 
 // --------- RWSTRUCT --------
 
-pub trait SVStruct<C: Circuit> {
-    type FStruct;
-    
-    fn alloc_to(c: &mut C) -> Self;
-}
 
-pub trait CompileableStruct<C, S, F, T>: SVStruct<C>
-where
-    C: Circuit,
-    S: Storage,
-    F: Fn(C::RawAddr) -> S::RawAddr,
-    S: AllowsStruct<T>,
-{
-    fn compile(&self, s: &mut S, mapping: F) -> T;
+// --------- CSSTRUCT --------
+
+pub trait CsStruct<C: Circuit> :  DataStruct<C>{
+    fn serialize_cs(&self) -> Vec<CsPermit<C>>;
 }
 
 
-impl<C: Circuit> SVStruct<C> for () {
-    type FStruct = ();
-
-    fn alloc_to(c: &mut C) -> Self {}
-}
+// --------- ADVICES ---------
 
 
-impl<C, S, F> CompileableStruct<C, S, F, ()> for ()
-where
-    C: Circuit,
-    S: Storage,
-    F: Fn(C::RawAddr) -> S::RawAddr,
-{
-    fn compile(&self, s: &mut S, mapping: F) -> () {}
-}
-
-impl<T, C> SVStruct<C> for Sig<C, T>
+impl<T, C> DataStruct<C> for Sig<C, T>
 where 
     C: Circuit,
     C::Config: HasSigtype<T>,
@@ -562,72 +539,68 @@ where
     }
 }
 
-// --------- CSSTRUCT --------
-
-pub trait CsStruct<C: Circuit> :  SVStruct<C>{
-    fn serialize_cs(&self) -> Vec<CsPermit<C>>;
-}
-
-
-// --------- ADVICES ---------
-
-
-pub trait Advices : Circuit {
-    fn advise_to_unassigned<I: SVStruct<Self>, O: SVStruct<Self>, F: Fn(I::FStruct) -> O::FStruct>(&mut self, f: F, input: &I, output: &O);
-
-    fn advise<I: SVStruct<Self>, O: SVStruct<Self>, F: Fn(I::FStruct) -> O::FStruct>(&mut self, f: F, input: &I) -> O {
-        let output = O::alloc_to(self);
-        self.advise_to_unassigned(f, input, &output);
-        output
-    }
-}
-
-pub trait TAdvice<C, S, F>
-where
-    C: Circuit,
-    S: Storage,
-    F: Fn(C::RawAddr) -> S::RawAddr,
-{
-    fn compile(&self, s: &mut S, mapping: F) -> impl RTAdvice<S>;
-}
-
 pub struct Advice<I, DI, O, DO, C, S, F>
 where
-    I: SVStruct<C>,
+    I: DataStruct<C>,
     I: CompileableStruct<C, S, F, DI>,
     S: AllowsStruct<DI>,
-    O: SVStruct<C>,
+    O: DataStruct<C>,
     O: CompileableStruct<C, S, F, DO>,
     S: AllowsStruct<DO>,
     C: Circuit,
     S: Storage,
     F: Fn(C::RawAddr) -> S::RawAddr,
 {
-    input: I,
-    output: O,
-    func: Arc<dyn Fn(<S as AllowsStruct<DI>>::DataSturct) -> <S as AllowsStruct<DO>>::DataSturct>,
-    _pd: PhantomData<(C, F)>,
+    pub input: I,
+    pub output: O,
+    pub func: Arc<dyn Fn(<S as AllowsStruct<DI>>::DataSturct) -> <S as AllowsStruct<DO>>::DataSturct>,
+    pub _pd: PhantomData<(C, F)>,
 }
 
 impl<I, DI, O, DO, C, S, F> TAdvice<C, S, F> for Advice<I, DI, O, DO, C, S, F>
 where
-    I: SVStruct<C>,
+    DI: 'static,
+    DO: 'static,
+    S: 'static,
+    I: DataStruct<C>,
     I: CompileableStruct<C, S, F, DI>,
     S: AllowsStruct<DI>,
-    O: SVStruct<C>,
+    O: DataStruct<C>,
     O: CompileableStruct<C, S, F, DO>,
     S: AllowsStruct<DO>,
     C: Circuit,
     S: Storage,
     F: Clone + Fn(C::RawAddr) -> S::RawAddr,
 {
-    fn compile(&self, s: &mut S, mapping: F) -> impl RTAdvice<S> {
-        RuntimeAdvice {
+    fn compile(&self, s: &mut S, mapping: F) -> Box<dyn RTAdvice<S>> {
+        Box::new(RuntimeAdvice {
             input: self.input.compile(s, mapping.clone()),
             output: self.output.compile(s, mapping),
             func: self.func.clone(),
-        }
+        })
     }
 }
 
-
+impl<I, DI, O, DO, C, S, F> TAdvice<C, S, F> for Box<Advice<I, DI, O, DO, C, S, F>>
+where
+    DI: 'static,
+    DO: 'static,
+    S: 'static,
+    I: DataStruct<C>,
+    I: CompileableStruct<C, S, F, DI>,
+    S: AllowsStruct<DI>,
+    O: DataStruct<C>,
+    O: CompileableStruct<C, S, F, DO>,
+    S: AllowsStruct<DO>,
+    C: Circuit,
+    S: Storage,
+    F: Clone + Fn(C::RawAddr) -> S::RawAddr,
+{
+    fn compile(&self, s: &mut S, mapping: F) -> Box<dyn RTAdvice<S>> {
+        Box::new(RuntimeAdvice {
+            input: self.input.compile(s, mapping.clone()),
+            output: self.output.compile(s, mapping),
+            func: self.func.clone(),
+        })
+    }
+}

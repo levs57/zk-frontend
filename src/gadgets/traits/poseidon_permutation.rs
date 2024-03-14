@@ -1,4 +1,5 @@
-use crate::circuit::{Advices, Circuit, HasSigtype, Sig, Signals, Variables};
+use crate::circuit::{Circuit, HasSigtype, Sig, Signals, Variables};
+use crate::advices::Advices;
 
 use super::sponge::{TSpongePrivate, TSponge, SpongeAction};
 use super::atoms::{Pow5, LinearCombination};
@@ -86,7 +87,7 @@ where
     }
 
     fn initialize_capacity(&mut self, c: &mut C, capacity: Self::Field) {
-        c.advise_to_unassigned(|_| capacity, &(), &self.initial_capacity)
+        c.advise_to_unassigned(|_| capacity, (), self.initial_capacity)
     }
 }
 
